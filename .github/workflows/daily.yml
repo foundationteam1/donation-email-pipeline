@@ -1,20 +1,34 @@
 name: Donation Email Pipeline
 
 on:
-  # Runs every day at 10am Kyiv time (UTC+3 = 7am UTC)
+  # Fetch donations every day at 10am Kyiv time
+  # Kyiv is Europe/Kyiv (EET: UTC+2 in winter, EEST: UTC+3 in summer)
+  # We run at 7am UTC which covers both offsets safely:
+  # - Winter (UTC+2): 7am UTC = 9am Kyiv — close enough, donations from previous day are all in
+  # - Summer (UTC+3): 7am UTC = 10am Kyiv — exactly right
+  # If you want precise 10am year-round, the send_drafts job handles its own timezone check
   schedule:
-    - cron: "0 7 * * *"
-
-  # Triggered by Notion webhook when Approved checkbox is ticked
-  repository_dispatch:
-    types: [notion-approved]
+    - cron: "0 7 * * *"   # fetch donations — 10am Kyiv approx
+    - cron: "0 14 * * *"  # send drafts check — runs at 4pm UTC = 6pm Kyiv (winter) / 5pm Kyiv (summer)
+    - cron: "0 15 * * *"  # send drafts check — runs at 5pm UTC = 7pm Kyiv (winter) / 6pm Kyiv (summer)
 
   # Allows manual runs from GitHub Actions UI for testing
   workflow_dispatch:
+    inputs:
+      job:
+        description: "Which job to run manually"
+        required: true
+        default: "fetch"
+        type: choice
+        options:
+          - fetch
+          - send_drafts
 
 jobs:
   fetch-donations:
-    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    if: >
+      (github.event_name == 'schedule' && github.event.schedule == '0 7 * * *') ||
+      (github.event_name == 'workflow_dispatch' && github.event.inputs.job == 'fetch')
     runs-on: ubuntu-latest
 
     steps:
@@ -27,11 +41,8 @@ jobs:
           python-version: "3.11"
 
       - name: Install dependencies
-        run: pip install requests google-auth google-auth-oauthlib google-api-python-client
+        run: pip install requests pytz
 
-      - name: List files in directory
-        run: ls -R
-        
       - name: Run fetch_donations.py
         env:
           ZOHO_CLIENT_ID: ${{ secrets.ZOHO_CLIENT_ID }}
@@ -41,8 +52,10 @@ jobs:
           NOTION_DATABASE_ID: ${{ secrets.NOTION_DATABASE_ID }}
         run: python fetch_donations.py
 
-  send-emails:
-    if: github.event_name == 'repository_dispatch' && github.event.action == 'notion-approved'
+  send-drafts:
+    if: >
+      (github.event_name == 'schedule' && (github.event.schedule == '0 14 * * *' || github.event.schedule == '0 15 * * *')) ||
+      (github.event_name == 'workflow_dispatch' && github.event.inputs.job == 'send_drafts')
     runs-on: ubuntu-latest
 
     steps:
@@ -55,16 +68,16 @@ jobs:
           python-version: "3.11"
 
       - name: Install dependencies
-        run: pip install requests google-auth google-auth-oauthlib google-api-python-client
+        run: pip install requests pytz google-auth google-auth-oauthlib google-api-python-client
 
       - name: Run send_emails.py
         env:
           NOTION_TOKEN: ${{ secrets.NOTION_TOKEN }}
           NOTION_DATABASE_ID: ${{ secrets.NOTION_DATABASE_ID }}
-          GMAIL_CEO_CLIENT_ID: ${{ secrets.GMAIL_CEO_CLIENT_ID }}
-          GMAIL_CEO_CLIENT_SECRET: ${{ secrets.GMAIL_CEO_CLIENT_SECRET }}
-          GMAIL_CEO_REFRESH_TOKEN: ${{ secrets.GMAIL_CEO_REFRESH_TOKEN }}
-          GMAIL_PRESIDENT_CLIENT_ID: ${{ secrets.GMAIL_PRESIDENT_CLIENT_ID }}
-          GMAIL_PRESIDENT_CLIENT_SECRET: ${{ secrets.GMAIL_PRESIDENT_CLIENT_SECRET }}
-          GMAIL_PRESIDENT_REFRESH_TOKEN: ${{ secrets.GMAIL_PRESIDENT_REFRESH_TOKEN }}
+          GMAIL_SVITLANA_CLIENT_ID: ${{ secrets.GMAIL_SVITLANA_CLIENT_ID }}
+          GMAIL_SVITLANA_CLIENT_SECRET: ${{ secrets.GMAIL_SVITLANA_CLIENT_SECRET }}
+          GMAIL_SVITLANA_REFRESH_TOKEN: ${{ secrets.GMAIL_SVITLANA_REFRESH_TOKEN }}
+          GMAIL_TYMOFIY_CLIENT_ID: ${{ secrets.GMAIL_TYMOFIY_CLIENT_ID }}
+          GMAIL_TYMOFIY_CLIENT_SECRET: ${{ secrets.GMAIL_TYMOFIY_CLIENT_SECRET }}
+          GMAIL_TYMOFIY_REFRESH_TOKEN: ${{ secrets.GMAIL_TYMOFIY_REFRESH_TOKEN }}
         run: python send_emails.py
