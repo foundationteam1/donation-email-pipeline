@@ -2,9 +2,10 @@ name: Donation Email Pipeline
 
 on:
   schedule:
-    - cron: "0 7 * * *"   # fetch donations — 10am Kyiv approx
-    - cron: "0 14 * * *"  # send drafts — 4pm UTC = 6pm Kyiv winter
-    - cron: "0 15 * * *"  # send drafts — 5pm UTC = 6pm Kyiv summer
+    - cron: "0 7 * * *"   # 10am Kyiv winter (UTC+2 = 7am UTC) -> fetch
+    - cron: "0 8 * * *"   # 10am Kyiv summer (UTC+3 = 7am UTC) -> fetch, winter this is 10am UTC = 12pm Kyiv (script exits)
+    - cron: "0 14 * * *"  # 4pm UTC = 6pm Kyiv winter -> send drafts
+    - cron: "0 15 * * *"  # 5pm UTC = 6pm Kyiv summer -> send drafts
   workflow_dispatch:
     inputs:
       job:
@@ -19,7 +20,7 @@ on:
 jobs:
   fetch-donations:
     if: |
-      (github.event_name == 'schedule' && github.event.schedule == '0 7 * * *') ||
+      (github.event_name == 'schedule' && (github.event.schedule == '0 7 * * *' || github.event.schedule == '0 8 * * *')) ||
       (github.event_name == 'workflow_dispatch' && github.event.inputs.job == 'fetch')
     runs-on: ubuntu-latest
     steps:
@@ -33,11 +34,6 @@ jobs:
 
       - name: Install dependencies
         run: pip install requests pytz
-        
-      - name: Debug — list files
-        run: |
-          echo "Current directory: $(pwd)"
-          ls -la
 
       - name: Run fetch_donations.py
         env:
