@@ -26,6 +26,7 @@ def get_zoho_access_token():
         "client_secret": ZOHO_CLIENT_SECRET,
         "grant_type": "refresh_token"
     })
+    print("Zoho token response:", response.json())  # temporary debug line
     response.raise_for_status()
     return response.json()["access_token"]
 
