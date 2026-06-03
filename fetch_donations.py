@@ -50,8 +50,10 @@ def get_yesterday_donations(access_token):
         return []
 
     if response.status_code != 200:
-    print("Zoho search error:", response.status_code, response.text)
-    response.raise_for_status()
+        print("Zoho search error:", response.status_code, response.text)
+        response.raise_for_status()
+
+    return response.json().get("data", [])
 
 
 def write_to_notion(donor_name, donor_email, amount, date):
