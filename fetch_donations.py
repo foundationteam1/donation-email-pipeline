@@ -107,6 +107,21 @@ def get_donations_in_window(access_token, start, end):
 
     return filtered
 
+def get_donor_status(access_token, contact_id):
+    if not contact_id:
+        return ""
+    headers = {"Authorization": f"Zoho-oauthtoken {access_token}"}
+    response = requests.get(
+        f"{ZOHO_API_BASE}/Contacts/{contact_id}",
+        headers=headers,
+        params={"fields": "Donor_status"}
+    )
+    if response.status_code != 200:
+        return ""
+    data = response.json().get("data", [])
+    if not data:
+        return ""
+    return data[0].get("Donor_status") or ""
 
 def write_to_notion(donor_name, donor_email, amount, date, donor_status):
     properties = {
