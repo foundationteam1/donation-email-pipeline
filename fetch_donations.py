@@ -180,7 +180,8 @@ def main():
         amount = float(donation.get("Donation_amount_in_USD") or 0)
         donor_email = donation.get("Email") or ""
         date = donation.get("Date_of_donation") or ""
-        donor_status = donation.get("Donor_status") or ""
+        contact_id = contact.get("id") if isinstance(contact, dict) else None
+        donor_status = get_donor_status(access_token, contact_id)
 
         contact = donation.get("Contact_of_the_donor", {})
         donor_name = contact.get("name", "Unknown") if isinstance(contact, dict) else "Unknown"
