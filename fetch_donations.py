@@ -64,10 +64,34 @@ def already_in_notion(donor_email, date_str):
     return len(response.json().get("results", [])) > 0
 
 
+def get_donor_status(access_token, contact_id):
+    """Fetches Donor_status directly from the Contacts module using the contact ID."""
+    if not contact_id:
+        return ""
+    
+    headers = {"Authorization": f"Zoho-oauthtoken {access_token}"}
+    # Double-check if the API name is exactly 'Donor_status' in Zoho CRM Setup
+    params = {"fields": "Donor_status"} 
+    
+    response = requests.get(
+        f"{ZOHO_API_BASE}/Contacts/{contact_id}", 
+        headers=headers, 
+        params=params
+    )
+    if response.status_code != 200:
+        print(f"Failed to fetch contact module status for {contact_id}: {response.status_code}")
+        return ""
+        
+    data = response.json().get("data", [])
+    if not data:
+        return ""
+    return data[0].get("Donor_status") or ""
+
+
 def get_donations_in_window(access_token, start, end):
     headers = {"Authorization": f"Zoho-oauthtoken {access_token}"}
     params = {
-        "fields": "Contact_of_the_donor,Email,Donation_amount_in_USD,Date_of_donation,Donor_status",
+        "fields": "Contact_of_the_donor,Email,Donation_amount_in_USD,Date_of_donation",
         "per_page": 500
     }
 
@@ -87,7 +111,6 @@ def get_donations_in_window(access_token, start, end):
     all_records = response.json().get("data", [])
     print(f"Total records fetched: {len(all_records)}")
 
-    # Debug: print field names to identify correct Donor_status field name
     if all_records:
         print("Fields in first record:", list(all_records[0].keys()))
 
@@ -107,21 +130,6 @@ def get_donations_in_window(access_token, start, end):
 
     return filtered
 
-def get_donor_status(access_token, contact_id):
-    if not contact_id:
-        return ""
-    headers = {"Authorization": f"Zoho-oauthtoken {access_token}"}
-    response = requests.get(
-        f"{ZOHO_API_BASE}/Contacts/{contact_id}",
-        headers=headers,
-        params={"fields": "Donor_status"}
-    )
-    if response.status_code != 200:
-        return ""
-    data = response.json().get("data", [])
-    if not data:
-        return ""
-    return data[0].get("Donor_status") or ""
 
 def write_to_notion(donor_name, donor_email, amount, date, donor_status):
     properties = {
@@ -180,11 +188,19 @@ def main():
         amount = float(donation.get("Donation_amount_in_USD") or 0)
         donor_email = donation.get("Email") or ""
         date = donation.get("Date_of_donation") or ""
-        contact_id = contact.get("id") if isinstance(contact, dict) else None
-        donor_status = get_donor_status(access_token, contact_id)
 
-        contact = donation.get("Contact_of_the_donor", {})
-        donor_name = contact.get("name", "Unknown") if isinstance(contact, dict) else "Unknown"
+        # Safe extraction of Contact data lookup
+        contact_lookup = donation.get("Contact_of_the_donor")
+        contact_id = None
+        donor_name = "Unknown"
+
+        if isinstance(contact_lookup, dict):
+            contact_id = contact_lookup.get("id")
+            donor_name = contact_lookup.get("name", "Unknown")
+
+        # Fetch the status from the Contact record since it doesn't exist on the Donation
+        print(f"Fetching status for Contact ID: {contact_id}...")
+        donor_status = get_donor_status(access_token, contact_id)
 
         # Skip if already written to Notion (prevents duplicates from two cron runs)
         if donor_email and already_in_notion(donor_email, date):
