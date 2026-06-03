@@ -26,50 +26,65 @@ def get_zoho_access_token():
         "client_secret": ZOHO_CLIENT_SECRET,
         "grant_type": "refresh_token"
     })
-    print("Zoho token response:", response.json())  # temporary debug line
+    print("Zoho token response:", response.json())
     response.raise_for_status()
     return response.json()["access_token"]
 
 
 def get_yesterday_donations(access_token):
+    yesterday = (datetime.utcnow() - timedelta(days=1)).strftime("%Y-%m-%d")
+
     headers = {"Authorization": f"Zoho-oauthtoken {access_token}"}
-    
-    # Fetch any 2 records with no filter to test field names
+    params = {
+        "fields": "Contact_of_the_donor,Email,Donation_amount_in_USD,Date_of_donation,Donor_status",
+        "criteria": f"(Date_of_donation:equals:{yesterday})"
+    }
+
     response = requests.get(
-        f"{ZOHO_API_BASE}/Donations",
+        f"{ZOHO_API_BASE}/Donations/search",
         headers=headers,
-        params={"per_page": 2}
+        params=params
     )
 
-    print("Status:", response.status_code)
-    print("Response:", response.text[:2000])
-    return []
+    if response.status_code == 204:
+        return []
+
+    if response.status_code != 200:
+        print("Zoho search error:", response.status_code, response.text)
+        response.raise_for_status()
+
     return response.json().get("data", [])
 
 
-def write_to_notion(donor_name, donor_email, amount, date):
+def write_to_notion(donor_name, donor_email, amount, date, donor_status):
+    # Build properties, only including non-empty values
+    properties = {
+        "Donor Name": {
+            "title": [{"text": {"content": donor_name}}]
+        },
+        "Donation Amount": {
+            "number": float(amount)
+        },
+        "Approved": {
+            "checkbox": False
+        },
+        "Email Sent": {
+            "checkbox": False
+        }
+    }
+
+    if donor_email:
+        properties["Donor Email"] = {"email": donor_email}
+
+    if date:
+        properties["Donation Date"] = {"date": {"start": date}}
+
+    if donor_status:
+        properties["Donor Status"] = {"select": {"name": donor_status}}
+
     payload = {
         "parent": {"database_id": NOTION_DATABASE_ID},
-        "properties": {
-            "Donor Name": {
-                "title": [{"text": {"content": donor_name}}]
-            },
-            "Donor Email": {
-                "email": donor_email
-            },
-            "Donation Amount": {
-                "number": float(amount)
-            },
-            "Donation Date": {
-                "date": {"start": date}
-            },
-            "Approved": {
-                "checkbox": False
-            },
-            "Email Sent": {
-                "checkbox": False
-            }
-        }
+        "properties": properties
     }
 
     response = requests.post(
@@ -77,8 +92,12 @@ def write_to_notion(donor_name, donor_email, amount, date):
         headers=NOTION_HEADERS,
         json=payload
     )
-    response.raise_for_status()
-    print(f"Written to Notion: {donor_name} — ${amount} — {date}")
+
+    if response.status_code != 200:
+        print("Notion error:", response.status_code, response.text)
+        response.raise_for_status()
+
+    print(f"Written to Notion: {donor_name} — ${amount} — {date} — {donor_status}")
 
 
 def main():
@@ -90,14 +109,15 @@ def main():
     print(f"Found {len(donations)} donation(s)")
 
     for donation in donations:
-        amount = float(donation.get("Donation_amount_in_USD", 0))
-        donor_email = donation.get("Email", "")
-        date = donation.get("Date_of_donation", "")
+        amount = float(donation.get("Donation_amount_in_USD") or 0)
+        donor_email = donation.get("Email") or ""
+        date = donation.get("Date_of_donation") or ""
+        donor_status = donation.get("Donor_status") or ""
 
         contact = donation.get("Contact_of_the_donor", {})
         donor_name = contact.get("name", "Unknown") if isinstance(contact, dict) else "Unknown"
 
-        write_to_notion(donor_name, donor_email, amount, date)
+        write_to_notion(donor_name, donor_email, amount, date, donor_status)
 
     print("Done.")
 
