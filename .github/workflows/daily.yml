@@ -17,9 +17,6 @@ on:
           - send_drafts
 
 jobs:
-  - name: Debug — list files
-    run: ls -la
-    
   fetch-donations:
     if: |
       (github.event_name == 'schedule' && github.event.schedule == '0 7 * * *') ||
@@ -36,6 +33,11 @@ jobs:
 
       - name: Install dependencies
         run: pip install requests pytz
+        
+      - name: Debug — list files
+        run: |
+          echo "Current directory: $(pwd)"
+          ls -la
 
       - name: Run fetch_donations.py
         env:
