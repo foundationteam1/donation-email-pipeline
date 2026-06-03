@@ -45,32 +45,12 @@ def get_window():
     return start, end
 
 
-def already_in_notion(donor_email, date_str):
-    """Check if a row with this email and date already exists in Notion."""
-    payload = {
-        "filter": {
-            "and": [
-                {"property": "Donor Email", "email": {"equals": donor_email}},
-                {"property": "Donation Date", "date": {"equals": date_str[:10]}}
-            ]
-        }
-    }
-    response = requests.post(
-        f"https://api.notion.com/v1/databases/{NOTION_DATABASE_ID}/query",
-        headers=NOTION_HEADERS,
-        json=payload
-    )
-    response.raise_for_status()
-    return len(response.json().get("results", [])) > 0
-
-
 def get_donor_status(access_token, contact_id):
     """Fetches Donor_status directly from the Contacts module using the contact ID."""
     if not contact_id:
         return ""
     
     headers = {"Authorization": f"Zoho-oauthtoken {access_token}"}
-    # Double-check if the API name is exactly 'Donor_status' in Zoho CRM Setup
     params = {"fields": "Donor_status"} 
     
     response = requests.get(
@@ -110,9 +90,6 @@ def get_donations_in_window(access_token, start, end):
 
     all_records = response.json().get("data", [])
     print(f"Total records fetched: {len(all_records)}")
-
-    if all_records:
-        print("Fields in first record:", list(all_records[0].keys()))
 
     filtered = []
     for r in all_records:
@@ -198,15 +175,11 @@ def main():
             contact_id = contact_lookup.get("id")
             donor_name = contact_lookup.get("name", "Unknown")
 
-        # Fetch the status from the Contact record since it doesn't exist on the Donation
+        # Fetch the cross-module status
         print(f"Fetching status for Contact ID: {contact_id}...")
         donor_status = get_donor_status(access_token, contact_id)
 
-        # Skip if already written to Notion (prevents duplicates from two cron runs)
-        if donor_email and already_in_notion(donor_email, date):
-            print(f"Skipping {donor_name} — already in Notion")
-            continue
-
+        # Send row straight to Notion; your Notion agent will manage duplicates on arrival
         write_to_notion(donor_name, donor_email, amount, date, donor_status)
 
     print("Done.")
