@@ -9,8 +9,8 @@ ZOHO_REFRESH_TOKEN = os.environ["ZOHO_REFRESH_TOKEN"]
 NOTION_TOKEN = os.environ["NOTION_TOKEN"]
 NOTION_DATABASE_ID = os.environ["NOTION_DATABASE_ID"]
 
-ZOHO_TOKEN_URL = "https://accounts.zoho.com/oauth/v2/token"
-ZOHO_API_BASE = "https://www.zohoapis.com/crm/v2"
+ZOHO_TOKEN_URL = "https://accounts.zoho.eu/oauth/v2/token"
+ZOHO_API_BASE = "https://www.zohoapis.eu/crm/v2"
 
 NOTION_HEADERS = {
     "Authorization": f"Bearer {NOTION_TOKEN}",
