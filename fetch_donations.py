@@ -22,12 +22,13 @@ def get_yesterday_donations(access_token):
 
     all_records = response.json().get("data", [])
     print(f"Total records fetched: {len(all_records)}")
-
+    
     filtered = [
-        print(f"Looking for date: {yesterday}"),
-        print(f"Sample dates from Zoho: {[r.get('Date_of_donation') for r in all_records[:5]]}"),
         r for r in all_records
         if (r.get("Date_of_donation") or "").startswith(yesterday)
     ]
-
+    
+    print(f"Looking for date: {yesterday}")
+    print(f"Sample dates from Zoho: {[r.get('Date_of_donation') for r in all_records[:5]]}")
+    
     return filtered
