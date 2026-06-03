@@ -1,6 +1,7 @@
 import os
 import requests
 from datetime import datetime, timedelta
+import pytz
 
 # --- CREDENTIALS FROM GITHUB SECRETS ---
 ZOHO_CLIENT_ID = os.environ["ZOHO_CLIENT_ID"]
@@ -11,6 +12,8 @@ NOTION_DATABASE_ID = os.environ["NOTION_DATABASE_ID"]
 
 ZOHO_TOKEN_URL = "https://accounts.zoho.eu/oauth/v2/token"
 ZOHO_API_BASE = "https://www.zohoapis.eu/crm/v2"
+
+KYIV_TZ = pytz.timezone("Europe/Kyiv")
 
 NOTION_HEADERS = {
     "Authorization": f"Bearer {NOTION_TOKEN}",
@@ -26,14 +29,42 @@ def get_zoho_access_token():
         "client_secret": ZOHO_CLIENT_SECRET,
         "grant_type": "refresh_token"
     })
-    print("Zoho token response:", response.json())
     response.raise_for_status()
     return response.json()["access_token"]
 
 
-def get_yesterday_donations(access_token):
-    yesterday = (datetime.utcnow() - timedelta(days=1)).strftime("%Y-%m-%d")
+def get_window():
+    """
+    Returns start and end of collection window in Kyiv time:
+    10:00am yesterday → 10:00am today.
+    """
+    now_kyiv = datetime.now(KYIV_TZ)
+    end = now_kyiv.replace(hour=10, minute=0, second=0, microsecond=0)
+    start = end - timedelta(days=1)
+    print(f"Collection window: {start.isoformat()} → {end.isoformat()} (Kyiv time)")
+    return start, end
 
+
+def already_in_notion(donor_email, date_str):
+    """Check if a row with this email and date already exists in Notion."""
+    payload = {
+        "filter": {
+            "and": [
+                {"property": "Donor Email", "email": {"equals": donor_email}},
+                {"property": "Donation Date", "date": {"equals": date_str[:10]}}
+            ]
+        }
+    }
+    response = requests.post(
+        f"https://api.notion.com/v1/databases/{NOTION_DATABASE_ID}/query",
+        headers=NOTION_HEADERS,
+        json=payload
+    )
+    response.raise_for_status()
+    return len(response.json().get("results", [])) > 0
+
+
+def get_donations_in_window(access_token, start, end):
     headers = {"Authorization": f"Zoho-oauthtoken {access_token}"}
     params = {
         "fields": "Contact_of_the_donor,Email,Donation_amount_in_USD,Date_of_donation,Donor_status",
@@ -56,13 +87,23 @@ def get_yesterday_donations(access_token):
     all_records = response.json().get("data", [])
     print(f"Total records fetched: {len(all_records)}")
 
-    filtered = [
-        r for r in all_records
-        if (r.get("Date_of_donation") or "").startswith(yesterday)
-    ]
+    # Debug: print field names to identify correct Donor_status field name
+    if all_records:
+        print("Fields in first record:", list(all_records[0].keys()))
 
-    print(f"Looking for date: {yesterday}")
-    print(f"Sample dates from Zoho: {[r.get('Date_of_donation') for r in all_records[:5]]}")
+    filtered = []
+    for r in all_records:
+        date_str = r.get("Date_of_donation") or ""
+        if not date_str:
+            continue
+        try:
+            record_dt = datetime.fromisoformat(date_str)
+            record_dt_kyiv = record_dt.astimezone(KYIV_TZ)
+            if start <= record_dt_kyiv < end:
+                filtered.append(r)
+        except ValueError:
+            print(f"Could not parse date: {date_str}")
+            continue
 
     return filtered
 
@@ -114,9 +155,11 @@ def main():
     print("Fetching Zoho access token...")
     access_token = get_zoho_access_token()
 
-    print("Fetching yesterday's donations...")
-    donations = get_yesterday_donations(access_token)
-    print(f"Found {len(donations)} donation(s)")
+    start, end = get_window()
+
+    print("Fetching donations in window...")
+    donations = get_donations_in_window(access_token, start, end)
+    print(f"Found {len(donations)} donation(s) in window")
 
     for donation in donations:
         amount = float(donation.get("Donation_amount_in_USD") or 0)
@@ -127,6 +170,11 @@ def main():
         contact = donation.get("Contact_of_the_donor", {})
         donor_name = contact.get("name", "Unknown") if isinstance(contact, dict) else "Unknown"
 
+        # Skip if already written to Notion (prevents duplicates from two cron runs)
+        if donor_email and already_in_notion(donor_email, date):
+            print(f"Skipping {donor_name} — already in Notion")
+            continue
+
         write_to_notion(donor_name, donor_email, amount, date, donor_status)
 
     print("Done.")
@@ -134,4 +182,3 @@ def main():
 
 if __name__ == "__main__":
     main()
- 
