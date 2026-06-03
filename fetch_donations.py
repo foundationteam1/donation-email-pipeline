@@ -33,12 +33,11 @@ def get_zoho_access_token():
 
 def get_yesterday_donations(access_token):
     yesterday = (datetime.utcnow() - timedelta(days=1)).strftime("%Y-%m-%d")
-    today = datetime.utcnow().strftime("%Y-%m-%d")
 
     headers = {"Authorization": f"Zoho-oauthtoken {access_token}"}
     params = {
         "fields": "Contact_of_the_donor,Email,Donation_amount_in_USD,Date_of_donation",
-        "criteria": f"(Date_of_donation:between:{yesterday},{today})"
+        "criteria": f"(Date_of_donation:equals:{yesterday})"
     }
 
     response = requests.get(
