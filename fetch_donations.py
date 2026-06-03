@@ -32,27 +32,18 @@ def get_zoho_access_token():
 
 
 def get_yesterday_donations(access_token):
-    yesterday = (datetime.utcnow() - timedelta(days=1)).strftime("%Y-%m-%d")
-
     headers = {"Authorization": f"Zoho-oauthtoken {access_token}"}
-    params = {
-        "fields": "Contact_of_the_donor,Email,Donation_amount_in_USD,Date_of_donation",
-        "criteria": f"(Date_of_donation:equals:{yesterday})"
-    }
-
+    
+    # Fetch any 2 records with no filter to test field names
     response = requests.get(
-        f"{ZOHO_API_BASE}/Donations/search",
+        f"{ZOHO_API_BASE}/Donations",
         headers=headers,
-        params=params
+        params={"per_page": 2}
     )
 
-    if response.status_code == 204:
-        return []
-
-    if response.status_code != 200:
-        print("Zoho search error:", response.status_code, response.text)
-        response.raise_for_status()
-
+    print("Status:", response.status_code)
+    print("Response:", response.text[:2000])
+    return []
     return response.json().get("data", [])
 
 
