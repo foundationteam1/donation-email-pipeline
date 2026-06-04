@@ -26,11 +26,11 @@ NOTION_HEADERS = {
 # Script is triggered at both 7am and 8am UTC to cover winter/summer.
 # Only proceed if it is currently 10am in Kyiv.
 now_kyiv = datetime.now(KYIV_TZ)
-if now_kyiv.hour != 10:
-    print(f"Current Kyiv time is {now_kyiv.strftime('%H:%M')} — not 10:00, exiting.")
-    sys.exit(0)
+#if now_kyiv.hour != 10:
+#    print(f"Current Kyiv time is {now_kyiv.strftime('%H:%M')} — not 10:00, exiting.")
+#    sys.exit(0)
 
-print(f"Kyiv time is {now_kyiv.strftime('%H:%M')} — proceeding.")
+#print(f"Kyiv time is {now_kyiv.strftime('%H:%M')} — proceeding.")
 
 
 def get_zoho_access_token():
