@@ -2,8 +2,10 @@ name: Donation Email Pipeline
 
 on:
   schedule:
-    - cron: "0 7 * * 1-5"   # 7am UTC = 10am Kyiv winter (UTC+2) — weekdays only
-    - cron: "0 8 * * 1-5"   # 8am UTC = 10am Kyiv summer (UTC+3) — weekdays only
+    - cron: "0 7 * * 1-5"   # 7am UTC = 10am Kyiv winter (UTC+2) — fetch
+    - cron: "0 8 * * 1-5"   # 8am UTC = 10am Kyiv summer (UTC+3) — fetch
+    - cron: "0 13 * * 1-5"  # 1pm UTC = 4pm Kyiv winter (UTC+2) — send drafts
+    - cron: "0 14 * * 1-5"  # 2pm UTC = 4pm Kyiv summer (UTC+3) — send drafts (also 3pm winter, script exits)
   workflow_dispatch:
     inputs:
       job:
@@ -44,7 +46,7 @@ jobs:
 
   send-drafts:
     if: |
-      (github.event_name == 'schedule' && (github.event.schedule == '0 14 * * 1-5' || github.event.schedule == '0 15 * * 1-5')) ||
+      (github.event_name == 'schedule' && (github.event.schedule == '0 13 * * 1-5' || github.event.schedule == '0 14 * * 1-5')) ||
       (github.event_name == 'workflow_dispatch' && github.event.inputs.job == 'send_drafts')
     runs-on: ubuntu-latest
     steps:
