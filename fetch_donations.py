@@ -130,7 +130,6 @@ def write_to_notion(donor_name, donor_email, amount, date, donor_status):
         },
         "Draft Created": {
             "checkbox": False
-            }
         }
     }
 
