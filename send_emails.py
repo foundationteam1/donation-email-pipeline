@@ -3,6 +3,7 @@ import sys
 import base64
 from datetime import datetime, timedelta, timezone
 from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
 
 import pytz
 import requests
@@ -17,11 +18,11 @@ KYIV_TZ = pytz.timezone("Europe/Kyiv")
 SEND_HOUR_KYIV = 16
 
 now_kyiv = datetime.now(KYIV_TZ)
-#if now_kyiv.hour != SEND_HOUR_KYIV:
-#    print(f"Current Kyiv time is {now_kyiv.strftime('%H:%M')} — not {SEND_HOUR_KYIV}:00, exiting.")
-#    sys.exit(0)
+if now_kyiv.hour != SEND_HOUR_KYIV:
+    print(f"Current Kyiv time is {now_kyiv.strftime('%H:%M')} — not {SEND_HOUR_KYIV}:00, exiting.")
+    sys.exit(0)
 
-#print(f"Kyiv time is {now_kyiv.strftime('%H:%M')} — proceeding.")
+print(f"Kyiv time is {now_kyiv.strftime('%H:%M')} — proceeding.")
 
 # --- SENDER EMAIL ADDRESSES ---
 SVITLANA_EMAIL = "sdenysenko@kse.org.ua"
@@ -53,9 +54,7 @@ def get_gmail_service(client_id, client_secret, refresh_token):
         token_uri="https://oauth2.googleapis.com/token",
         client_id=client_id,
         client_secret=client_secret,
-        scopes=[
-            "https://www.googleapis.com/auth/gmail.compose"
-        ]
+        scopes=["https://www.googleapis.com/auth/gmail.compose"]
     )
     creds.refresh(Request())
     return build("gmail", "v1", credentials=creds)
@@ -95,19 +94,51 @@ def was_emailed_recently(email_sent_at_str):
         return False
 
 
+def get_first_name(full_name):
+    """Takes the first word of the full name and capitalizes it."""
+    if not full_name:
+        return "Friend"
+    return full_name.strip().split()[0].capitalize()
+
+
 def create_draft(service, sender_email, recipient_email, donor_name):
+    first_name = get_first_name(donor_name)
     subject = "Thank you for your donation to KSE Foundation"
-    body = (
-        f"Dear {donor_name},\n\n"
-        f"Thank you so much for your generous donation to the KSE Foundation. "
-        f"Your support means a great deal to us and directly contributes to our mission.\n\n"
-        f"With gratitude,\n"
-        f"Kyiv School of Economics Foundation"
-    )
-    message = MIMEText(body)
+
+    html_body = f"""<html>
+<body>
+  <p>Dear {first_name},</p>
+
+  <p>Thank you for your support of KSE and our programming. I received a notification about your donation and just wanted to share a bit of what is happening in our lives beyond the war.</p>
+
+  <p>We are in the middle of our admissions campaign, and we want to get the top talent, educate them, and build Ukraine tomorrow — bright and independent. Every week we meet candidates, run interviews, and do our best to keep talented young people here, so that the next generation chooses to study, work, and build their lives in Ukraine.</p>
+
+  <p>It is still early, and we are shaping this as we go. I just wanted you to hear it directly from me.</p>
+
+  <p>Thank you for being with us.</p>
+
+  <p>--<br>
+  #StandWithUkraine<br>
+  Sincerely,<br>
+  (Ms.) Svitlana Denysenko<br>
+  Director for Partnership Relations<br>
+  Director of Charitable Foundation<br>
+  Kyiv School of Economics<br>
+  Dragon Capital Building<br>
+  03113 Kyiv, Ukraine<br>
+  mob. +38 (097) 792 98 70<br>
+  e-mail <a href="mailto:sdenysenko@kse.org.ua">sdenysenko@kse.org.ua</a><br>
+  web: <a href="https://foundation.kse.ua/en/">https://foundation.kse.ua/en/</a><br>
+  <a href="https://www.kse.ua">www.kse.ua</a></p>
+</body>
+</html>"""
+
+    message = MIMEMultipart("alternative")
     message["to"] = recipient_email
     message["from"] = sender_email
     message["subject"] = subject
+    message.attach(MIMEText(html_body, "html"))
+
     encoded = base64.urlsafe_b64encode(message.as_bytes()).decode()
 
     service.users().drafts().create(
