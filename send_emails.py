@@ -54,7 +54,7 @@ def get_gmail_service(client_id, client_secret, refresh_token):
         client_id=client_id,
         client_secret=client_secret,
         scopes=[
-            "https://www.googleapis.com/auth/gmail.send"
+            "https://www.googleapis.com/auth/gmail.compose"
         ]
     )
     creds.refresh(Request())
