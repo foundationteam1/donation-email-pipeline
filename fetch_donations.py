@@ -1,4 +1,5 @@
 import os
+import sys
 import requests
 from datetime import datetime, timedelta
 import pytz
@@ -21,6 +22,16 @@ NOTION_HEADERS = {
     "Notion-Version": "2022-06-28"
 }
 
+# --- TIMEZONE GUARD ---
+# Script is triggered at both 7am and 8am UTC to cover winter/summer.
+# Only proceed if it is currently 10am in Kyiv.
+now_kyiv = datetime.now(KYIV_TZ)
+if now_kyiv.hour != 10:
+    print(f"Current Kyiv time is {now_kyiv.strftime('%H:%M')} — not 10:00, exiting.")
+    sys.exit(0)
+
+print(f"Kyiv time is {now_kyiv.strftime('%H:%M')} — proceeding.")
+
 
 def get_zoho_access_token():
     response = requests.post(ZOHO_TOKEN_URL, params={
@@ -38,7 +49,6 @@ def get_window():
     Returns start and end of collection window in Kyiv time:
     10:00am yesterday → 10:00am today.
     """
-    now_kyiv = datetime.now(KYIV_TZ)
     end = now_kyiv.replace(hour=10, minute=0, second=0, microsecond=0)
     start = end - timedelta(days=1)
     print(f"Collection window: {start.isoformat()} → {end.isoformat()} (Kyiv time)")
@@ -49,19 +59,18 @@ def get_donor_status(access_token, contact_id):
     """Fetches Donor_status directly from the Contacts module using the contact ID."""
     if not contact_id:
         return ""
-    
+
     headers = {"Authorization": f"Zoho-oauthtoken {access_token}"}
-    params = {"fields": "Donor_status"} 
-    
     response = requests.get(
-        f"{ZOHO_API_BASE}/Contacts/{contact_id}", 
-        headers=headers, 
-        params=params
+        f"{ZOHO_API_BASE}/Contacts/{contact_id}",
+        headers=headers,
+        params={"fields": "Donor_status"}
     )
+
     if response.status_code != 200:
-        print(f"Failed to fetch contact module status for {contact_id}: {response.status_code}")
+        print(f"Failed to fetch contact status for {contact_id}: {response.status_code}")
         return ""
-        
+
     data = response.json().get("data", [])
     if not data:
         return ""
@@ -166,7 +175,6 @@ def main():
         donor_email = donation.get("Email") or ""
         date = donation.get("Date_of_donation") or ""
 
-        # Safe extraction of Contact data lookup
         contact_lookup = donation.get("Contact_of_the_donor")
         contact_id = None
         donor_name = "Unknown"
@@ -175,11 +183,9 @@ def main():
             contact_id = contact_lookup.get("id")
             donor_name = contact_lookup.get("name", "Unknown")
 
-        # Fetch the cross-module status
         print(f"Fetching status for Contact ID: {contact_id}...")
         donor_status = get_donor_status(access_token, contact_id)
 
-        # Send row straight to Notion; your Notion agent will manage duplicates on arrival
         write_to_notion(donor_name, donor_email, amount, date, donor_status)
 
     print("Done.")
