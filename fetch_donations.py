@@ -128,8 +128,9 @@ def write_to_notion(donor_name, donor_email, amount, date, donor_status):
         "Approved": {
             "checkbox": False
         },
-        "Email Sent": {
+        "Draft Created": {
             "checkbox": False
+            }
         }
     }
 
