@@ -18,9 +18,9 @@ KYIV_TZ = pytz.timezone("Europe/Kyiv")
 SEND_HOUR_KYIV = 16
 
 now_kyiv = datetime.now(KYIV_TZ)
-if now_kyiv.hour != SEND_HOUR_KYIV:
-    print(f"Current Kyiv time is {now_kyiv.strftime('%H:%M')} — not {SEND_HOUR_KYIV}:00, exiting.")
-    sys.exit(0)
+#if now_kyiv.hour != SEND_HOUR_KYIV:
+#    print(f"Current Kyiv time is {now_kyiv.strftime('%H:%M')} — not {SEND_HOUR_KYIV}:00, exiting.")
+#    sys.exit(0)
 
 print(f"Kyiv time is {now_kyiv.strftime('%H:%M')} — proceeding.")
 
