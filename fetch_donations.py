@@ -181,7 +181,14 @@ def main():
         print(f"Fetching status for Contact ID: {contact_id}...")
         donor_status = get_donor_status(access_token, contact_id)
 
-        designation = donation.get("Designations") or ""
+        designation_raw = donation.get("Designations")
+        if isinstance(designation_raw, dict):
+            designation = designation_raw.get("name") or ""
+        elif isinstance(designation_raw, list):
+            designation = ", ".join(d.get("name", "") for d in designation_raw if isinstance(d, dict))
+        else:
+            designation = str(designation_raw) if designation_raw else ""
+
         utm = donation.get("SOURCE") or ""
 
         write_to_notion(donor_name, donor_email, amount, date, donor_status, designation, utm)
