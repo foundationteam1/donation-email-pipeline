@@ -26,7 +26,7 @@ print(f"Kyiv time is {now_kyiv.strftime('%H:%M')} — proceeding.")
 
 # --- SENDER EMAIL ADDRESSES ---
 SVITLANA_EMAIL = "sdenysenko@kse.org.ua"
-TYMOFIY_EMAIL = ""  # Fill in when ready
+TYMOFIY_EMAIL = "president@kse.org.ua"  # Fill in when ready
 
 # --- CREDENTIALS FROM GITHUB SECRETS ---
 NOTION_TOKEN = os.environ["NOTION_TOKEN"]
