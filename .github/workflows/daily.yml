@@ -2,7 +2,7 @@ name: Donation Email Pipeline
 
 on:
   schedule:
-    - cron: "0 11 * * *"   # 7am UTC daily — fetch donations
+    - cron: "25 11 * * *"   # 7am UTC daily — fetch donations
     - cron: "0 13 * * *"  # 1pm UTC daily — send drafts
   workflow_dispatch:
     inputs:
