@@ -2,8 +2,10 @@ name: Donation Email Pipeline
 
 on:
   schedule:
-    - cron: "25 11 * * *"   # 7am UTC daily — fetch donations
+    - cron: "0 7 * * *"   # 7am UTC daily — fetch donations
     - cron: "0 13 * * *"  # 1pm UTC daily — send drafts
+  repository_dispatch:
+    types: [fetch, send_drafts]
   workflow_dispatch:
     inputs:
       job:
@@ -18,7 +20,8 @@ on:
 jobs:
   fetch-donations:
     if: |
-      (github.event_name == 'schedule' && github.event.schedule == '25 11 * * *') ||
+      (github.event_name == 'schedule' && github.event.schedule == '0 7 * * *') ||
+      (github.event_name == 'repository_dispatch' && github.event.action == 'fetch') ||
       (github.event_name == 'workflow_dispatch' && github.event.inputs.job == 'fetch')
     runs-on: ubuntu-latest
     steps:
@@ -45,6 +48,7 @@ jobs:
   send-drafts:
     if: |
       (github.event_name == 'schedule' && github.event.schedule == '0 13 * * *') ||
+      (github.event_name == 'repository_dispatch' && github.event.action == 'send_drafts') ||
       (github.event_name == 'workflow_dispatch' && github.event.inputs.job == 'send_drafts')
     runs-on: ubuntu-latest
     steps:
