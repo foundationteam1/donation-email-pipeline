@@ -69,7 +69,7 @@ def get_donor_status(access_token, contact_id):
 def get_donations_in_window(access_token, start, end):
     headers = {"Authorization": f"Zoho-oauthtoken {access_token}"}
     params = {
-        "fields": "Contact_of_the_donor,Email,Donation_amount_in_USD,Date_of_donation",
+        "fields": "Contact_of_the_donor,Email,Donation_amount_in_USD,Date_of_donation,Designations,SOURCE",
         "per_page": 500
     }
 
@@ -106,7 +106,7 @@ def get_donations_in_window(access_token, start, end):
     return filtered
 
 
-def write_to_notion(donor_name, donor_email, amount, date, donor_status):
+def write_to_notion(donor_name, donor_email, amount, date, donor_status, designation, utm):
     properties = {
         "Donor Name": {
             "title": [{"text": {"content": donor_name}}]
@@ -131,6 +131,12 @@ def write_to_notion(donor_name, donor_email, amount, date, donor_status):
     if donor_status:
         properties["Donor Status"] = {"select": {"name": donor_status}}
 
+    if designation:
+        properties["Designation"] = {"rich_text": [{"text": {"content": designation}}]}
+
+    if utm:
+        properties["UTM"] = {"rich_text": [{"text": {"content": utm}}]}
+
     payload = {
         "parent": {"database_id": NOTION_DATABASE_ID},
         "properties": properties
@@ -146,7 +152,7 @@ def write_to_notion(donor_name, donor_email, amount, date, donor_status):
         print("Notion error:", response.status_code, response.text)
         response.raise_for_status()
 
-    print(f"Written to Notion: {donor_name} — ${amount} — {date} — {donor_status}")
+    print(f"Written to Notion: {donor_name} — ${amount} — {date} — {donor_status} — {designation} — {utm}")
 
 
 def main():
@@ -175,7 +181,10 @@ def main():
         print(f"Fetching status for Contact ID: {contact_id}...")
         donor_status = get_donor_status(access_token, contact_id)
 
-        write_to_notion(donor_name, donor_email, amount, date, donor_status)
+        designation = donation.get("Designations") or ""
+        utm = donation.get("SOURCE") or ""
+
+        write_to_notion(donor_name, donor_email, amount, date, donor_status, designation, utm)
 
     print("Done.")
 
