@@ -50,7 +50,7 @@ def get_window():
     10:00am yesterday → 10:00am today.
     """
     end = now_kyiv.replace(hour=10, minute=0, second=0, microsecond=0)
-    start = end - timedelta(days=1)
+    start = end - timedelta(days=3)
     print(f"Collection window: {start.isoformat()} → {end.isoformat()} (Kyiv time)")
     return start, end
 
