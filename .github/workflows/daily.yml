@@ -31,7 +31,7 @@ jobs:
           python-version: "3.11"
 
       - name: Install dependencies
-        run: pip install requests pytz
+        run: pip install requests pytz translitua==1.3.2
 
       - name: Run fetch_donations.py
         env:
