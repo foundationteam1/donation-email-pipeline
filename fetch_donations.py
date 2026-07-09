@@ -141,6 +141,67 @@ def get_donations_in_window(access_token, start, end):
     return filtered
 
 
+def _to_dt(value):
+    """Parse an ISO date/datetime string to a datetime, or return None."""
+    if not value:
+        return None
+    try:
+        return datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+
+
+def donation_already_in_notion(donor_email, date):
+    """Return True if a donation with the same donor email AND the same donation
+    timestamp is already in Notion. Lets the script be re-run safely (e.g. while
+    testing) without creating duplicate pages.
+
+    Matching is on the FULL donation date/time, not just the calendar day, so two
+    separate gifts from the same donor on the same day are kept as distinct
+    records. Timestamps are compared as parsed instants, so a difference in
+    formatting (fractional seconds, +00:00 vs Z) between what Zoho sends and what
+    Notion returns won't cause a real duplicate to be missed. Uses the existing
+    'Donor Email' and 'Donation Date' properties — no extra Notion column needed.
+    """
+    if not donor_email or not date:
+        return False
+
+    target = _to_dt(date)
+    start_cursor = None
+
+    while True:
+        payload = {
+            "filter": {"property": "Donor Email", "email": {"equals": donor_email}},
+            "page_size": 100
+        }
+        if start_cursor:
+            payload["start_cursor"] = start_cursor
+
+        response = requests.post(
+            f"https://api.notion.com/v1/databases/{NOTION_DATABASE_ID}/query",
+            headers=NOTION_HEADERS,
+            json=payload
+        )
+
+        if response.status_code != 200:
+            print("Notion query error:", response.status_code, response.text)
+            response.raise_for_status()
+
+        data = response.json()
+        for page in data.get("results", []):
+            existing = page.get("properties", {}).get("Donation Date", {}).get("date")
+            existing_start = (existing or {}).get("start") or ""
+            existing_dt = _to_dt(existing_start)
+            if existing_start == date or (
+                target is not None and existing_dt is not None and existing_dt == target
+            ):
+                return True
+
+        if not data.get("has_more"):
+            return False
+        start_cursor = data.get("next_cursor")
+
+
 def write_to_notion(donor_name, donor_email, amount, date, donor_status, designation, utm):
     properties = {
         "Donor Name": {
@@ -204,6 +265,11 @@ def main():
         amount = float(donation.get("Donation_amount_in_USD") or 0)
         donor_email = donation.get("Email") or ""
         date = donation.get("Date_of_donation") or ""
+
+        # Skip donations already in Notion — same donor email + same timestamp (safe to re-run).
+        if donation_already_in_notion(donor_email, date):
+            print(f"Skipping duplicate donation ({donor_email} at {date})")
+            continue
 
         contact_lookup = donation.get("Contact_of_the_donor")
         contact_id = None
