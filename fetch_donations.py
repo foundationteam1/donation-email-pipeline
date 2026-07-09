@@ -2,6 +2,7 @@ import os
 import requests
 from datetime import datetime, timedelta
 import pytz
+from translitua import translit, UkrainianKMU, UkrainianBGN
 
 # --- CREDENTIALS FROM GITHUB SECRETS ---
 ZOHO_CLIENT_ID = os.environ["ZOHO_CLIENT_ID"]
@@ -20,6 +21,40 @@ NOTION_HEADERS = {
     "Content-Type": "application/json",
     "Notion-Version": "2022-06-28"
 }
+
+# =====================================================================
+# UKRAINIAN -> LATIN NAME TRANSLITERATION
+# ---------------------------------------------------------------------
+# Uses the `translitua` library (pip install translitua).
+#
+#   STYLE = "passport" -> KMU 2010 official   (Sofiia, Andrii, Tymofii)
+#                         matches Ukrainian ID documents / wire records
+#   STYLE = "natural"  -> BGN/PCGN romanization (Sofiya, Andriy, Tymofiy)
+#                         reads more naturally in donor-facing greetings
+#
+# Latin names (foreign donors, or names already entered in English) are
+# left unchanged by the library, so it is safe to run on every record.
+# =====================================================================
+STYLE = "passport"
+_STANDARD = {"passport": UkrainianKMU, "natural": UkrainianBGN}[STYLE]
+
+# Hand-set spellings for known / major donors. These OVERRIDE both standards,
+# for people whose established English spelling differs from the mechanical
+# result (e.g. Тимофій -> auto "Tymofii", but he spells it "Tymofiy").
+# Key by the exact Cyrillic name as it appears in Zoho.
+NAME_OVERRIDES = {
+    "Тимофій Милованов": "Tymofiy Mylovanov",
+}
+
+
+def to_english_name(name):
+    """Override table first, otherwise transliterate with the chosen standard."""
+    if not name:
+        return name
+    key = name.strip()
+    if key in NAME_OVERRIDES:
+        return NAME_OVERRIDES[key]
+    return translit(name, _STANDARD)
 
 
 def get_zoho_access_token():
@@ -177,6 +212,12 @@ def main():
         if isinstance(contact_lookup, dict):
             contact_id = contact_lookup.get("id")
             donor_name = contact_lookup.get("name", "Unknown")
+
+        # Transliterate Ukrainian Cyrillic names to Latin before writing.
+        original_name = donor_name
+        donor_name = to_english_name(donor_name)
+        if donor_name != original_name:
+            print(f"Transliterated: {original_name} -> {donor_name}")
 
         print(f"Fetching status for Contact ID: {contact_id}...")
         donor_status = get_donor_status(access_token, contact_id)
