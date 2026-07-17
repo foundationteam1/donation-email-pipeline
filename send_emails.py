@@ -109,11 +109,11 @@ def create_draft(service, sender_email, recipient_email, donor_name):
 <body>
   <p>Dear {first_name},</p>
 
-  <p>Thank you for your support of KSE and our programming. I received a notification about your donation and just wanted to share a bit of what is happening in our lives beyond the war.</p>
+  <p>Thank you for your support of KSE. I have noticed your donation in our system and wanted to share an update.</p>
 
-  <p>We are in the middle of our admissions campaign, and we want to get the top talent, educate them, and build Ukraine tomorrow — bright and independent. Every week we meet candidates, run interviews, and do our best to keep talented young people here, so that the next generation chooses to study, work, and build their lives in Ukraine.</p>
+  <p>Kyiv and Ukraine are still living under regular shelling, but our answer is to keep teaching students. Right now, in the middle of our admissions campaign, we are doing our best to keep talented young people in Ukraine. This summer, we launched several new summer schools for Ukrainian youth such as the KSE Agentic AI Summer School.</p>
 
-  <p>It is still early, and we are shaping this as we go. I just wanted you to hear it directly from me.</p>
+  <p>Your generosity is exactly what makes this possible. Because of partners like you, our students and community can keep learning, growing, and preparing to help rebuild Ukraine's future.</p>
 
   <p>Thank you for being with us.</p>
 
