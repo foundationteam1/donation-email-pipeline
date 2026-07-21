@@ -70,4 +70,7 @@ jobs:
           GMAIL_TYMOFIY_CLIENT_ID: ${{ secrets.GMAIL_TYMOFIY_CLIENT_ID }}
           GMAIL_TYMOFIY_CLIENT_SECRET: ${{ secrets.GMAIL_TYMOFIY_CLIENT_SECRET }}
           GMAIL_TYMOFIY_REFRESH_TOKEN: ${{ secrets.GMAIL_TYMOFIY_REFRESH_TOKEN }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          SVITLANA_TELEGRAM_USER_ID: ${{ secrets.SVITLANA_TELEGRAM_USER_ID }}
         run: python send_emails.py
