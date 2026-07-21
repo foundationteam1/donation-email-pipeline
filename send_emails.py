@@ -40,6 +40,12 @@ GMAIL_TYMOFIY_CLIENT_ID = os.environ["GMAIL_TYMOFIY_CLIENT_ID"]
 GMAIL_TYMOFIY_CLIENT_SECRET = os.environ["GMAIL_TYMOFIY_CLIENT_SECRET"]
 GMAIL_TYMOFIY_REFRESH_TOKEN = os.environ["GMAIL_TYMOFIY_REFRESH_TOKEN"]
 
+# --- TELEGRAM CREDENTIALS ---
+# Reuse the token of the bot you already have running in the group.
+TELEGRAM_BOT_TOKEN = os.environ["TELEGRAM_BOT_TOKEN"]
+TELEGRAM_CHAT_ID = os.environ["TELEGRAM_CHAT_ID"]
+SVITLANA_TELEGRAM_USER_ID = os.environ["SVITLANA_TELEGRAM_USER_ID"]
+
 NOTION_HEADERS = {
     "Authorization": f"Bearer {NOTION_TOKEN}",
     "Content-Type": "application/json",
@@ -165,6 +171,31 @@ def mark_draft_created(page_id):
         response.raise_for_status()
 
 
+def send_telegram_notification():
+    """Post a message to the group, tagging Svitlana via her numeric user ID.
+
+    She has no @username, so we use a text mention: linking her name to
+    tg://user?id=<id> makes it a tappable mention that notifies her.
+    """
+    text = (
+        f'<a href="tg://user?id={SVITLANA_TELEGRAM_USER_ID}">Світлано</a>, '
+        'добрий день! Драфти створені на пошті.'
+    )
+    response = requests.post(
+        f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage",
+        json={
+            "chat_id": TELEGRAM_CHAT_ID,
+            "text": text,
+            "parse_mode": "HTML",
+        }
+    )
+    # Drafts are already created at this point, so just log on failure — don't crash the job.
+    if response.status_code != 200:
+        print(f"Failed to send Telegram message: {response.status_code} {response.text}")
+    else:
+        print("Telegram notification sent.")
+
+
 def main():
     print("Fetching approved rows from Notion...")
     rows = get_approved_rows()
@@ -179,6 +210,8 @@ def main():
         tymofiy_service = get_gmail_service(
             GMAIL_TYMOFIY_CLIENT_ID, GMAIL_TYMOFIY_CLIENT_SECRET, GMAIL_TYMOFIY_REFRESH_TOKEN
         )
+
+    drafts_created = 0
 
     for row in rows:
         props = row["properties"]
@@ -205,6 +238,7 @@ def main():
                 continue
             create_draft(svitlana_service, SVITLANA_EMAIL, donor_email, donor_name)
             mark_draft_created(page_id)
+            drafts_created += 1
 
         elif amount < 1000:
             if was_emailed_recently(email_sent_at):
@@ -212,6 +246,7 @@ def main():
                 continue
             create_draft(svitlana_service, SVITLANA_EMAIL, donor_email, donor_name)
             mark_draft_created(page_id)
+            drafts_created += 1
 
         else:
             # $1000+
@@ -220,6 +255,13 @@ def main():
                 continue
             create_draft(tymofiy_service, TYMOFIY_EMAIL, donor_email, donor_name)
             mark_draft_created(page_id)
+            drafts_created += 1
+
+    # --- NOTIFY SVITLANA AFTER ALL EMAILS ARE DONE ---
+    if drafts_created > 0:
+        send_telegram_notification()
+    else:
+        print("No drafts created — skipping Telegram notification.")
 
     print("Done.")
 
