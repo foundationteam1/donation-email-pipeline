@@ -11,6 +11,9 @@ ZOHO_REFRESH_TOKEN = os.environ["ZOHO_REFRESH_TOKEN"]
 NOTION_TOKEN = os.environ["NOTION_TOKEN"]
 NOTION_DATABASE_ID = os.environ["NOTION_DATABASE_ID"]
 
+# Set DRY_RUN=1 to log what would be written without touching Notion.
+DRY_RUN = os.environ.get("DRY_RUN", "").strip().lower() in ("1", "true", "yes")
+
 ZOHO_TOKEN_URL = "https://accounts.zoho.eu/oauth/v2/token"
 ZOHO_API_BASE = "https://www.zohoapis.eu/crm/v2"
 
@@ -25,10 +28,10 @@ NOTION_HEADERS = {
 # =====================================================================
 # COLLECTION WINDOW
 # ---------------------------------------------------------------------
-# The script looks back LOOKBACK_DAYS days from the moment it runs.
-# A window wider than the run interval is deliberate: if a run fails or
-# GitHub delays the schedule, the next run still picks up what was missed.
-# Duplicates are prevented by the dedup keys below, not by the window.
+# The script looks back LOOKBACK_DAYS days from the moment it runs. A window
+# wider than the run interval is deliberate: if a run fails or GitHub delays
+# the schedule, the next run still picks up what was missed. Duplicates are
+# prevented by the dedup keys below, not by the window.
 # =====================================================================
 LOOKBACK_DAYS = 7
 
@@ -38,6 +41,21 @@ ZOHO_MAX_PAGES = 25
 # Records are paged newest-created first. We keep paging until we are this far
 # past the window start, so back-dated entries created late are still caught.
 ZOHO_CREATED_GRACE_DAYS = 7
+
+# =====================================================================
+# DEDUPLICATION
+# ---------------------------------------------------------------------
+# Primary key: the Zoho record id, stored in a Notion rich_text property.
+# This is exact — no reconstruction from name/amount/date, no timezone or
+# spelling edge cases. Create a text property with this name in the Notion
+# database; if it is missing the script warns and falls back to the
+# heuristic keys, which are weaker.
+#
+# Existing Notion rows written before this property existed have no id, so
+# they are matched by the fallback keys only. That gap closes as old
+# donations age out of the window.
+# =====================================================================
+ZOHO_ID_PROPERTY = "Zoho ID"
 
 # =====================================================================
 # UKRAINIAN -> LATIN NAME TRANSLITERATION
@@ -101,28 +119,33 @@ def _instant(value):
 
     Zoho sends '2026-08-04T10:00:00+03:00'; Notion may hand the same instant
     back as '2026-08-04T07:00:00.000Z'. Both collapse to the same string here,
-    so formatting differences can never hide a real duplicate.
+    so formatting differences cannot hide a real duplicate.
     """
     dt = _parse_dt(value)
     return dt.astimezone(pytz.UTC).isoformat() if dt else ""
 
 
-def donation_keys(donor_name, donor_email, amount, date_value):
+def donation_keys(zoho_id, donor_name, donor_email, amount, date_value):
     """Build the set of identity keys for one donation.
 
-    Two keys, so a donation is recognised whether or not it has an email:
-      - email  + exact instant
-      - name   + amount + exact instant
+    A donation counts as already-seen if ANY key matches something in Notion:
+      - zoho id                              (exact, preferred)
+      - email + exact instant                (for rows with no stored id)
+      - name + amount + exact instant        (for rows with no email either)
 
-    A donation counts as already-seen if EITHER key matches something in Notion.
     Matching is on the full timestamp, not the calendar day, so two separate
     gifts from the same donor on the same day stay distinct records.
     """
-    ts = _instant(date_value) or "no-date"
     keys = set()
+
+    if zoho_id:
+        keys.add(("zoho", str(zoho_id).strip()))
+
+    ts = _instant(date_value) or "no-date"
     if donor_email:
         keys.add(("email", donor_email.strip().lower(), ts))
     keys.add(("name", (donor_name or "").strip().lower(), round(float(amount or 0), 2), ts))
+
     return keys
 
 
@@ -168,12 +191,7 @@ def get_donor_status(access_token, contact_id):
 
 
 def get_donations_in_window(access_token, start, end):
-    """Page through Zoho Donations newest-first and keep those inside the window.
-
-    The old version requested a single page and filtered it in Python, so any
-    donation past the first 200 records was silently invisible. This walks pages
-    until it is clearly past the window, then stops.
-    """
+    """Page through Zoho Donations newest-first and keep those inside the window."""
     headers = {"Authorization": f"Zoho-oauthtoken {access_token}"}
     fields = ("Contact_of_the_donor,Email,Donation_amount_in_USD,"
               "Date_of_donation,Designations,SOURCE")
@@ -239,16 +257,36 @@ def get_donations_in_window(access_token, start, end):
     return collected
 
 
+def _plain_text(prop):
+    """Read a Notion rich_text or title property as a plain string."""
+    if not prop:
+        return ""
+    parts = prop.get("rich_text") or prop.get("title") or []
+    return "".join(part.get("plain_text", "") for part in parts)
+
+
+def notion_database_is_empty():
+    """One-record probe, used to tell 'nothing in Notion yet' apart from
+    'the dedup query silently matched nothing'."""
+    response = requests.post(
+        f"https://api.notion.com/v1/databases/{NOTION_DATABASE_ID}/query",
+        headers=NOTION_HEADERS,
+        json={"page_size": 1}
+    )
+    response.raise_for_status()
+    return not response.json().get("results")
+
+
 def load_existing_keys(since):
     """Fetch everything already in Notion from `since` onward, as dedup keys.
 
-    One paginated query per run, instead of a fresh query per donation. With a
-    7-day window most donations are re-seen six times before they age out, so
-    the old per-donation lookup meant hundreds of Notion calls a day.
+    One paginated query per run, rather than a fresh query per donation.
     """
     keys = set()
-    pages = 0
+    records = 0
+    with_zoho_id = 0
     start_cursor = None
+    samples = []
 
     while True:
         payload = {
@@ -272,27 +310,39 @@ def load_existing_keys(since):
             response.raise_for_status()
 
         data = response.json()
-        for page in data.get("results", []):
-            props = page.get("properties", {})
+        for result in data.get("results", []):
+            props = result.get("properties", {})
 
             email = (props.get("Donor Email") or {}).get("email") or ""
             date_prop = (props.get("Donation Date") or {}).get("date") or {}
             amount = (props.get("Donation Amount") or {}).get("number")
-            title_parts = (props.get("Donor Name") or {}).get("title") or []
-            name = "".join(part.get("plain_text", "") for part in title_parts)
+            name = _plain_text(props.get("Donor Name"))
+            zoho_id = _plain_text(props.get(ZOHO_ID_PROPERTY))
 
-            keys |= donation_keys(name, email, amount, date_prop.get("start"))
-            pages += 1
+            if zoho_id:
+                with_zoho_id += 1
+
+            row_keys = donation_keys(zoho_id, name, email, amount, date_prop.get("start"))
+            keys |= row_keys
+            records += 1
+
+            if len(samples) < 3:
+                samples.append(sorted(str(k) for k in row_keys))
 
         if not data.get("has_more"):
             break
         start_cursor = data.get("next_cursor")
 
-    print(f"Loaded {pages} existing Notion record(s) → {len(keys)} dedup key(s)")
-    return keys
+    print(f"Loaded {records} existing Notion record(s) since {since.date().isoformat()} "
+          f"→ {len(keys)} dedup key(s); {with_zoho_id} carry a {ZOHO_ID_PROPERTY}")
+    for sample in samples:
+        print(f"  existing key sample: {sample}")
+
+    return keys, records
 
 
-def write_to_notion(donor_name, donor_email, amount, date, donor_status, designation, utm):
+def write_to_notion(zoho_id, donor_name, donor_email, amount, date,
+                    donor_status, designation, utm):
     properties = {
         "Donor Name": {
             "title": [{"text": {"content": donor_name}}]
@@ -307,6 +357,9 @@ def write_to_notion(donor_name, donor_email, amount, date, donor_status, designa
             "checkbox": False
         }
     }
+
+    if zoho_id:
+        properties[ZOHO_ID_PROPERTY] = {"rich_text": [{"text": {"content": str(zoho_id)}}]}
 
     if donor_email:
         properties["Donor Email"] = {"email": donor_email}
@@ -323,6 +376,11 @@ def write_to_notion(donor_name, donor_email, amount, date, donor_status, designa
     if utm:
         properties["UTM"] = {"rich_text": [{"text": {"content": utm}}]}
 
+    if DRY_RUN:
+        print(f"DRY RUN — would write: {donor_name} — ${amount} — {date} — "
+              f"{donor_status} — {designation} — {utm} — zoho:{zoho_id}")
+        return
+
     payload = {
         "parent": {"database_id": NOTION_DATABASE_ID},
         "properties": properties
@@ -334,14 +392,33 @@ def write_to_notion(donor_name, donor_email, amount, date, donor_status, designa
         json=payload
     )
 
+    # The Zoho ID property may not exist in the database yet; warn and retry
+    # without it rather than failing the whole run.
+    if response.status_code == 400 and ZOHO_ID_PROPERTY in properties \
+            and ZOHO_ID_PROPERTY in response.text:
+        print(f"WARNING: Notion has no '{ZOHO_ID_PROPERTY}' property — "
+              f"writing without it. Add a text property with that name to get "
+              f"exact deduplication.")
+        properties.pop(ZOHO_ID_PROPERTY)
+        payload["properties"] = properties
+        response = requests.post(
+            "https://api.notion.com/v1/pages",
+            headers=NOTION_HEADERS,
+            json=payload
+        )
+
     if response.status_code != 200:
         print("Notion error:", response.status_code, response.text)
         response.raise_for_status()
 
-    print(f"Written to Notion: {donor_name} — ${amount} — {date} — {donor_status} — {designation} — {utm}")
+    print(f"Written to Notion: {donor_name} — ${amount} — {date} — "
+          f"{donor_status} — {designation} — {utm}")
 
 
 def main():
+    if DRY_RUN:
+        print("=== DRY RUN — nothing will be written to Notion ===")
+
     print("Fetching Zoho access token...")
     access_token = get_zoho_access_token()
 
@@ -350,16 +427,28 @@ def main():
     # One day of slack on the Notion side, so a donation sitting right on the
     # window edge is still recognised despite any timezone rounding.
     print("Loading donations already in Notion...")
-    existing_keys = load_existing_keys(start - timedelta(days=1))
+    existing_keys, existing_records = load_existing_keys(start - timedelta(days=1))
 
     print("Fetching donations in window...")
     donations = get_donations_in_window(access_token, start, end)
     print(f"Found {len(donations)} donation(s) in window")
 
+    # Refuse to write a whole window's worth of donations when the dedup index
+    # came back empty but the database is not. That combination means the
+    # lookup failed, not that everything is new.
+    if donations and existing_records == 0 and not notion_database_is_empty():
+        raise SystemExit(
+            "ABORTING: the Notion database has records, but the dedup query "
+            "returned none for this window. Check that the 'Donation Date' "
+            "property is populated and named exactly that. Nothing was written."
+        )
+
     written = 0
     skipped = 0
+    logged_keys = 0
 
     for donation in donations:
+        zoho_id = donation.get("id") or ""
         amount = float(donation.get("Donation_amount_in_USD") or 0)
         donor_email = donation.get("Email") or ""
         date = donation.get("Date_of_donation") or ""
@@ -383,9 +472,15 @@ def main():
             print(f"WARNING: {donor_name} has no donation date — "
                   f"dedup falls back to name + amount only")
 
-        keys = donation_keys(donor_name, donor_email, amount, date)
+        keys = donation_keys(zoho_id, donor_name, donor_email, amount, date)
+
+        if logged_keys < 3:
+            print(f"  zoho key sample: {sorted(str(k) for k in keys)}")
+            logged_keys += 1
+
         if keys & existing_keys:
-            print(f"Skipping duplicate donation ({donor_name}, {donor_email or 'no email'} at {date})")
+            print(f"Skipping duplicate donation "
+                  f"({donor_name}, {donor_email or 'no email'} at {date})")
             skipped += 1
             continue
 
@@ -402,15 +497,16 @@ def main():
 
         utm = donation.get("SOURCE") or ""
 
-        write_to_notion(donor_name, donor_email, amount, date, donor_status, designation, utm)
+        write_to_notion(zoho_id, donor_name, donor_email, amount, date,
+                        donor_status, designation, utm)
 
         # Register immediately, so an exact repeat inside this same batch is
-        # caught too — the old code only compared against what Notion held
-        # when the run started.
+        # caught too.
         existing_keys |= keys
         written += 1
 
-    print(f"Done. Written: {written}, skipped as duplicates: {skipped}")
+    verb = "would write" if DRY_RUN else "written"
+    print(f"Done. {verb.capitalize()}: {written}, skipped as duplicates: {skipped}")
 
 
 if __name__ == "__main__":
