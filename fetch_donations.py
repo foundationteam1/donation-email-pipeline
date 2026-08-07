@@ -23,10 +23,25 @@ NOTION_HEADERS = {
 }
 
 # =====================================================================
+# COLLECTION WINDOW
+# ---------------------------------------------------------------------
+# The script looks back LOOKBACK_DAYS days from the moment it runs.
+# A window wider than the run interval is deliberate: if a run fails or
+# GitHub delays the schedule, the next run still picks up what was missed.
+# Duplicates are prevented by the dedup keys below, not by the window.
+# =====================================================================
+LOOKBACK_DAYS = 7
+
+# Zoho paging. per_page is capped at 200 by the API regardless of what we ask.
+ZOHO_PAGE_SIZE = 200
+ZOHO_MAX_PAGES = 25
+# Records are paged newest-created first. We keep paging until we are this far
+# past the window start, so back-dated entries created late are still caught.
+ZOHO_CREATED_GRACE_DAYS = 7
+
+# =====================================================================
 # UKRAINIAN -> LATIN NAME TRANSLITERATION
 # ---------------------------------------------------------------------
-# Uses the `translitua` library (pip install translitua).
-#
 #   STYLE = "passport" -> KMU 2010 official   (Sofiia, Andrii, Tymofii)
 #                         matches Ukrainian ID documents / wire records
 #   STYLE = "natural"  -> BGN/PCGN romanization (Sofiya, Andriy, Tymofiy)
@@ -57,6 +72,60 @@ def to_english_name(name):
     return translit(name, _STANDARD)
 
 
+# ---------------------------------------------------------------------
+# DATE HELPERS
+# ---------------------------------------------------------------------
+
+def _parse_dt(value):
+    """Parse an ISO date or datetime string into an aware datetime, or None.
+
+    Naive values (a bare 'YYYY-MM-DD', or a datetime with no offset) are read as
+    Kyiv time. Zoho and Notion both live in the foundation's timezone, and the
+    GitHub runner is on UTC, so assuming the runner's clock would shift every
+    date-only value back by three hours.
+    """
+    if not value:
+        return None
+    text = str(value).strip().replace("Z", "+00:00")
+    try:
+        dt = datetime.fromisoformat(text)
+    except ValueError:
+        return None
+    if dt.tzinfo is None:
+        dt = KYIV_TZ.localize(dt)
+    return dt
+
+
+def _instant(value):
+    """Normalise a timestamp to a single canonical string (UTC ISO).
+
+    Zoho sends '2026-08-04T10:00:00+03:00'; Notion may hand the same instant
+    back as '2026-08-04T07:00:00.000Z'. Both collapse to the same string here,
+    so formatting differences can never hide a real duplicate.
+    """
+    dt = _parse_dt(value)
+    return dt.astimezone(pytz.UTC).isoformat() if dt else ""
+
+
+def donation_keys(donor_name, donor_email, amount, date_value):
+    """Build the set of identity keys for one donation.
+
+    Two keys, so a donation is recognised whether or not it has an email:
+      - email  + exact instant
+      - name   + amount + exact instant
+
+    A donation counts as already-seen if EITHER key matches something in Notion.
+    Matching is on the full timestamp, not the calendar day, so two separate
+    gifts from the same donor on the same day stay distinct records.
+    """
+    ts = _instant(date_value) or "no-date"
+    keys = set()
+    if donor_email:
+        keys.add(("email", donor_email.strip().lower(), ts))
+    keys.add(("name", (donor_name or "").strip().lower(), round(float(amount or 0), 2), ts))
+    return keys
+
+
 def get_zoho_access_token():
     response = requests.post(ZOHO_TOKEN_URL, params={
         "refresh_token": ZOHO_REFRESH_TOKEN,
@@ -69,14 +138,11 @@ def get_zoho_access_token():
 
 
 def get_window():
-    """
-    Returns start and end of collection window:
-    24 hours ago → now, both in Kyiv time.
-    Simple and reliable regardless of what time the script runs.
-    """
+    """Returns start and end of the collection window, both in Kyiv time."""
     now_kyiv = datetime.now(KYIV_TZ)
-    start = now_kyiv - timedelta(hours=24)
-    print(f"Collection window: {start.isoformat()} → {now_kyiv.isoformat()} (Kyiv time)")
+    start = now_kyiv - timedelta(days=LOOKBACK_DAYS)
+    print(f"Collection window ({LOOKBACK_DAYS} days): "
+          f"{start.isoformat()} → {now_kyiv.isoformat()} (Kyiv time)")
     return start, now_kyiv
 
 
@@ -102,76 +168,94 @@ def get_donor_status(access_token, contact_id):
 
 
 def get_donations_in_window(access_token, start, end):
-    headers = {"Authorization": f"Zoho-oauthtoken {access_token}"}
-    params = {
-        "fields": "Contact_of_the_donor,Email,Donation_amount_in_USD,Date_of_donation,Designations,SOURCE",
-        "per_page": 500
-    }
+    """Page through Zoho Donations newest-first and keep those inside the window.
 
-    response = requests.get(
-        f"{ZOHO_API_BASE}/Donations",
-        headers=headers,
-        params=params
-    )
-
-    if response.status_code == 204:
-        return []
-
-    if response.status_code != 200:
-        print("Zoho fetch error:", response.status_code, response.text)
-        response.raise_for_status()
-
-    all_records = response.json().get("data", [])
-    print(f"Total records fetched: {len(all_records)}")
-
-    filtered = []
-    for r in all_records:
-        date_str = r.get("Date_of_donation") or ""
-        if not date_str:
-            continue
-        try:
-            record_dt = datetime.fromisoformat(date_str)
-            record_dt_kyiv = record_dt.astimezone(KYIV_TZ)
-            if start <= record_dt_kyiv < end:
-                filtered.append(r)
-        except ValueError:
-            print(f"Could not parse date: {date_str}")
-            continue
-
-    return filtered
-
-
-def _to_dt(value):
-    """Parse an ISO date/datetime string to a datetime, or return None."""
-    if not value:
-        return None
-    try:
-        return datetime.fromisoformat(value.replace("Z", "+00:00"))
-    except ValueError:
-        return None
-
-
-def donation_already_in_notion(donor_email, date):
-    """Return True if a donation with the same donor email AND the same donation
-    timestamp is already in Notion. Lets the script be re-run safely (e.g. while
-    testing) without creating duplicate pages.
-
-    Matching is on the FULL donation date/time, not just the calendar day, so two
-    separate gifts from the same donor on the same day are kept as distinct
-    records. Timestamps are compared as parsed instants, so a difference in
-    formatting (fractional seconds, +00:00 vs Z) between what Zoho sends and what
-    Notion returns won't cause a real duplicate to be missed. Uses the existing
-    'Donor Email' and 'Donation Date' properties — no extra Notion column needed.
+    The old version requested a single page and filtered it in Python, so any
+    donation past the first 200 records was silently invisible. This walks pages
+    until it is clearly past the window, then stops.
     """
-    if not donor_email or not date:
-        return False
+    headers = {"Authorization": f"Zoho-oauthtoken {access_token}"}
+    fields = ("Contact_of_the_donor,Email,Donation_amount_in_USD,"
+              "Date_of_donation,Designations,SOURCE")
+    created_cutoff = start - timedelta(days=ZOHO_CREATED_GRACE_DAYS)
 
-    target = _to_dt(date)
+    collected = []
+    seen_total = 0
+    page = 1
+    use_sort = True
+
+    while page <= ZOHO_MAX_PAGES:
+        params = {"fields": fields, "per_page": ZOHO_PAGE_SIZE, "page": page}
+        if use_sort:
+            params["sort_by"] = "Created_Time"
+            params["sort_order"] = "desc"
+
+        response = requests.get(f"{ZOHO_API_BASE}/Donations", headers=headers, params=params)
+
+        # Some Zoho setups reject sorting on this module; retry unsorted once.
+        if response.status_code == 400 and use_sort and page == 1:
+            print("Zoho rejected sort parameters, retrying without them")
+            use_sort = False
+            continue
+
+        if response.status_code == 204:
+            break
+
+        if response.status_code != 200:
+            print("Zoho fetch error:", response.status_code, response.text)
+            response.raise_for_status()
+
+        body = response.json()
+        records = body.get("data", [])
+        if not records:
+            break
+
+        seen_total += len(records)
+        oldest_created = None
+
+        for r in records:
+            record_dt = _parse_dt(r.get("Date_of_donation"))
+            if record_dt and start <= record_dt < end:
+                collected.append(r)
+
+            created = _parse_dt(r.get("Created_Time"))
+            if created and (oldest_created is None or created < oldest_created):
+                oldest_created = created
+
+        # Newest-first, so once a whole page predates the window we are done.
+        if use_sort and oldest_created and oldest_created < created_cutoff:
+            break
+
+        if not body.get("info", {}).get("more_records"):
+            break
+
+        page += 1
+
+    if page > ZOHO_MAX_PAGES:
+        print(f"WARNING: stopped at the {ZOHO_MAX_PAGES}-page safety limit — "
+              f"older donations in the window may have been missed")
+
+    print(f"Scanned {seen_total} Zoho record(s) across {page} page(s)")
+    return collected
+
+
+def load_existing_keys(since):
+    """Fetch everything already in Notion from `since` onward, as dedup keys.
+
+    One paginated query per run, instead of a fresh query per donation. With a
+    7-day window most donations are re-seen six times before they age out, so
+    the old per-donation lookup meant hundreds of Notion calls a day.
+    """
+    keys = set()
+    pages = 0
     start_cursor = None
 
     while True:
         payload = {
-            "filter": {"property": "Donor Email", "email": {"equals": donor_email}},
+            "filter": {
+                "property": "Donation Date",
+                "date": {"on_or_after": since.date().isoformat()}
+            },
             "page_size": 100
         }
         if start_cursor:
@@ -189,17 +273,23 @@ def donation_already_in_notion(donor_email, date):
 
         data = response.json()
         for page in data.get("results", []):
-            existing = page.get("properties", {}).get("Donation Date", {}).get("date")
-            existing_start = (existing or {}).get("start") or ""
-            existing_dt = _to_dt(existing_start)
-            if existing_start == date or (
-                target is not None and existing_dt is not None and existing_dt == target
-            ):
-                return True
+            props = page.get("properties", {})
+
+            email = (props.get("Donor Email") or {}).get("email") or ""
+            date_prop = (props.get("Donation Date") or {}).get("date") or {}
+            amount = (props.get("Donation Amount") or {}).get("number")
+            title_parts = (props.get("Donor Name") or {}).get("title") or []
+            name = "".join(part.get("plain_text", "") for part in title_parts)
+
+            keys |= donation_keys(name, email, amount, date_prop.get("start"))
+            pages += 1
 
         if not data.get("has_more"):
-            return False
+            break
         start_cursor = data.get("next_cursor")
+
+    print(f"Loaded {pages} existing Notion record(s) → {len(keys)} dedup key(s)")
+    return keys
 
 
 def write_to_notion(donor_name, donor_email, amount, date, donor_status, designation, utm):
@@ -257,19 +347,22 @@ def main():
 
     start, end = get_window()
 
+    # One day of slack on the Notion side, so a donation sitting right on the
+    # window edge is still recognised despite any timezone rounding.
+    print("Loading donations already in Notion...")
+    existing_keys = load_existing_keys(start - timedelta(days=1))
+
     print("Fetching donations in window...")
     donations = get_donations_in_window(access_token, start, end)
     print(f"Found {len(donations)} donation(s) in window")
+
+    written = 0
+    skipped = 0
 
     for donation in donations:
         amount = float(donation.get("Donation_amount_in_USD") or 0)
         donor_email = donation.get("Email") or ""
         date = donation.get("Date_of_donation") or ""
-
-        # Skip donations already in Notion — same donor email + same timestamp (safe to re-run).
-        if donation_already_in_notion(donor_email, date):
-            print(f"Skipping duplicate donation ({donor_email} at {date})")
-            continue
 
         contact_lookup = donation.get("Contact_of_the_donor")
         contact_id = None
@@ -279,11 +372,22 @@ def main():
             contact_id = contact_lookup.get("id")
             donor_name = contact_lookup.get("name", "Unknown")
 
-        # Transliterate Ukrainian Cyrillic names to Latin before writing.
+        # Transliterate before the dedup check: Notion stores the Latin form,
+        # so both sides of the comparison have to be in the same alphabet.
         original_name = donor_name
         donor_name = to_english_name(donor_name)
         if donor_name != original_name:
             print(f"Transliterated: {original_name} -> {donor_name}")
+
+        if not date:
+            print(f"WARNING: {donor_name} has no donation date — "
+                  f"dedup falls back to name + amount only")
+
+        keys = donation_keys(donor_name, donor_email, amount, date)
+        if keys & existing_keys:
+            print(f"Skipping duplicate donation ({donor_name}, {donor_email or 'no email'} at {date})")
+            skipped += 1
+            continue
 
         print(f"Fetching status for Contact ID: {contact_id}...")
         donor_status = get_donor_status(access_token, contact_id)
@@ -300,7 +404,13 @@ def main():
 
         write_to_notion(donor_name, donor_email, amount, date, donor_status, designation, utm)
 
-    print("Done.")
+        # Register immediately, so an exact repeat inside this same batch is
+        # caught too — the old code only compared against what Notion held
+        # when the run started.
+        existing_keys |= keys
+        written += 1
+
+    print(f"Done. Written: {written}, skipped as duplicates: {skipped}")
 
 
 if __name__ == "__main__":
