@@ -1,6 +1,9 @@
 name: Donation Email Pipeline
 
 on:
+  schedule:
+    - cron: "0 7 * * *"
+    - cron: "0 13 * * *"
   repository_dispatch:
     types: [fetch, send_drafts]
   workflow_dispatch:
