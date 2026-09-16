@@ -23,6 +23,24 @@ print(f"Kyiv time is {now_kyiv.strftime('%H:%M')} — proceeding.")
 # --- SENDER EMAIL ADDRESSES ---
 SVITLANA_EMAIL = "sdenysenko@kse.org.ua"
 TYMOFIY_EMAIL = "president@kse.org.ua"  # Fill in when ready
+# --- EMAIL SIGNATURES ---
+# Each signature is the whole closing block, sign-off line included.
+SVITLANA_SIGNATURE = """<p>#StandWithUkraine</p>
+  <p>Sincerely,<br>
+  (Ms.) Svitlana Denysenko<br>
+  Director for Partnership Relations<br>
+  Director of Charitable Foundation</p>
+  <p>Kyiv School of Economics<br>
+  Dragon Capital Building<br>
+  03113 Kyiv, Ukraine<br>
+  mob. +38 (097) 792 98 70<br>
+  e-mail <a href="mailto:sdenysenko@kse.org.ua">sdenysenko@kse.org.ua</a><br>
+  web:<br>
+  <a href="https://foundation.kse.ua/en/">https://foundation.kse.ua/en/</a><br>
+  <a href="https://www.kse.ua">www.kse.ua</a></p>"""
+TYMOFIY_SIGNATURE = """<p>Warm regards,<br>
+  Tymofiy Mylovanov<br>
+  President, Kyiv School of Economics</p>"""
 # --- CREDENTIALS FROM GITHUB SECRETS ---
 NOTION_TOKEN = os.environ["NOTION_TOKEN"]
 NOTION_DATABASE_ID = os.environ["NOTION_DATABASE_ID"]
@@ -88,7 +106,7 @@ def get_first_name(full_name):
     if not full_name:
         return "Friend"
     return full_name.strip().split()[0].capitalize()
-def create_draft(service, sender_email, recipient_email, donor_name):
+def create_draft(service, sender_email, recipient_email, donor_name, signature):
     first_name = get_first_name(donor_name)
     subject = "Thank you for your donation to KSE Foundation"
     html_body = f"""<html>
@@ -101,9 +119,7 @@ def create_draft(service, sender_email, recipient_email, donor_name):
   <p>This is possible because of partners like you. Your support allows us to give talented students both the opportunity and the confidence to build their future in Ukraine.</p>
   <p>Our students can study, and KSE can continue operating fully, only because Ukraine’s defenders make it possible. We remain fully committed to supporting them.</p>
   <p>Thank you for being with KSE.</p>
-  <p>Warm regards,<br>
-  Svitlana Denysenko<br>
-  Executive Director, KSE Foundation</p>
+  {signature}
 </body>
 </html>"""
     message = MIMEMultipart("alternative")
@@ -186,14 +202,14 @@ def main():
             if donor_status != "New":
                 print(f"  Skipping — under $100 but donor status is '{donor_status}', not New")
                 continue
-            create_draft(svitlana_service, SVITLANA_EMAIL, donor_email, donor_name)
+            create_draft(svitlana_service, SVITLANA_EMAIL, donor_email, donor_name, SVITLANA_SIGNATURE)
             mark_draft_created(page_id)
             drafts_created += 1
         elif amount < 1000:
             if was_emailed_recently(email_sent_at):
                 print(f"  Skipping — emailed within last 60 days")
                 continue
-            create_draft(svitlana_service, SVITLANA_EMAIL, donor_email, donor_name)
+            create_draft(svitlana_service, SVITLANA_EMAIL, donor_email, donor_name, SVITLANA_SIGNATURE)
             mark_draft_created(page_id)
             drafts_created += 1
         else:
@@ -201,7 +217,7 @@ def main():
             if not TYMOFIY_EMAIL or not tymofiy_service:
                 print(f"  Skipping — Tymofiy email not configured yet")
                 continue
-            create_draft(tymofiy_service, TYMOFIY_EMAIL, donor_email, donor_name)
+            create_draft(tymofiy_service, TYMOFIY_EMAIL, donor_email, donor_name, TYMOFIY_SIGNATURE)
             mark_draft_created(page_id)
             drafts_created += 1
     # --- NOTIFY SVITLANA AFTER ALL EMAILS ARE DONE ---
