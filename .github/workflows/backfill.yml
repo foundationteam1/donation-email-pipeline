@@ -6,7 +6,7 @@ on:
       limit:
         description: "Process only first N pages (empty = all)"
         required: false
-        default: "5"
+        default: "1"
       dry_run:
         description: "Dry run (change nothing)"
         type: boolean
