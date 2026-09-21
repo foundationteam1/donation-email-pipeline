@@ -1,5 +1,5 @@
 /**
- * Запускає завдання (збір донатів або створення драфтів) у GitHub Actions.
+ * Запускає збір донатів (Zoho → Notion) у GitHub Actions.
  *
  * Навіщо: розклад GitHub (cron) запускає завдання із затримкою від 1 до 4
  * годин. Ця затримка — черга на серверах GitHub, і виправити її неможливо.
@@ -12,30 +12,15 @@
  *   3. Project Settings → часовий пояс → (GMT+02:00) Kyiv.
  *
  * ЗАПУСК:
- *   Руками — виберіть потрібну функцію угорі (triggerFetch або
- *   triggerSendDrafts) та натисніть Run.
+ *   Руками — виберіть функцію triggerFetch угорі та натисніть Run.
  *   За розкладом — Triggers (іконка годинника ліворуч) → Add Trigger →
- *   потрібна функція, Time-driven, Day timer, потрібна година.
+ *   функція triggerFetch, Time-driven, Day timer, потрібна година.
  */
 
 var REPO = "foundationteam1/donation-email-pipeline";
 
 
 function triggerFetch() {
-  // "fetch" мусить збігатися з типом, переліченим у daily.yml
-  // у розділі repository_dispatch.
-  dispatchEvent("fetch", "Запуск збору донатів");
-}
-
-
-function triggerSendDrafts() {
-  // "send_drafts" мусить збігатися з типом, переліченим у daily.yml
-  // у розділі repository_dispatch.
-  dispatchEvent("send_drafts", "Запуск створення драфтів");
-}
-
-
-function dispatchEvent(eventType, actionLabel) {
   var token = PropertiesService.getScriptProperties().getProperty("GITHUB_TOKEN");
   if (!token) {
     Logger.log("ПОМИЛКА: не знайдено GITHUB_TOKEN у Script Properties. "
@@ -53,7 +38,9 @@ function dispatchEvent(eventType, actionLabel) {
         "X-GitHub-Api-Version": "2022-11-28"
       },
       contentType: "application/json",
-      payload: JSON.stringify({ event_type: eventType }),
+      // "fetch" мусить збігатися з типом, переліченим у daily.yml
+      // у розділі repository_dispatch.
+      payload: JSON.stringify({ event_type: "fetch" }),
       muteHttpExceptions: true
     }
   );
@@ -62,7 +49,7 @@ function dispatchEvent(eventType, actionLabel) {
 
   // GitHub відповідає 204 без тіла, якщо все гаразд.
   if (code === 204) {
-    Logger.log(actionLabel + " надіслано в GitHub. "
+    Logger.log("Запуск збору донатів надіслано в GitHub. "
                + "Перебіг видно у вкладці Actions на GitHub.");
     return;
   }
