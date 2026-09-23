@@ -106,10 +106,27 @@ def get_first_name(full_name):
     if not full_name:
         return "Friend"
     return full_name.strip().split()[0].capitalize()
-def create_draft(service, sender_email, recipient_email, donor_name, signature):
+PUBLISHERS_DESIGNATION = "Support for Small Ukrainian Publishers"
+
+
+def create_draft(service, sender_email, recipient_email, donor_name, signature, designation=""):
     first_name = get_first_name(donor_name)
-    subject = "Thank you for your donation to KSE Foundation"
-    html_body = f"""<html>
+    if designation.strip() == PUBLISHERS_DESIGNATION:
+        subject = "Thank you for supporting Ukrainian publishers"
+        html_body = f"""<html>
+<body>
+  <p>Dear {first_name},</p>
+  <p>Thank you for supporting Ukrainian publishers</p>
+  <p>More than 13 million books were destroyed in Ukraine in the summer of 2026 alone. For small publishers, such losses can mean not having the resources to finance their next books.</p>
+  <p>Your donation, together with the support of others, helps provide publishers with the funding they need to print books, sustain their work, and plan ahead.</p>
+  <p>Every contribution matters, regardless of its size. Together, they allow us to support more publishers and bring more Ukrainian books to readers.</p>
+  <p>Thank you for being part of it.</p>
+  {signature}
+</body>
+</html>"""
+    else:
+        subject = "Thank you for your donation to KSE Foundation"
+        html_body = f"""<html>
 <body>
   <p>Dear {first_name},</p>
   <p>Thank you for your support of KSE.</p>
@@ -193,31 +210,39 @@ def main():
         amount = props["Donation Amount"]["number"] or 0
         donor_status = props["Donor Status"]["select"]["name"] if props["Donor Status"]["select"] else ""
         email_sent_at = props["Email Sent At"]["date"]["start"] if props["Email Sent At"]["date"] else ""
+        designation = (props.get("Designation", {}).get("rich_text") or [{}])[0].get("text", {}).get("content", "") \
+            if props.get("Designation", {}).get("rich_text") else ""
         print(f"Processing: {donor_name} — ${amount} — status: {donor_status}")
         if not donor_email:
             print(f"  Skipping — no email address")
             continue
+        is_publishers_donation = designation.strip() == PUBLISHERS_DESIGNATION
         # --- ROUTING LOGIC ---
         if amount < 100:
             if donor_status != "New":
                 print(f"  Skipping — under $100 but donor status is '{donor_status}', not New")
                 continue
-            create_draft(svitlana_service, SVITLANA_EMAIL, donor_email, donor_name, SVITLANA_SIGNATURE)
+            create_draft(svitlana_service, SVITLANA_EMAIL, donor_email, donor_name, SVITLANA_SIGNATURE, designation)
             mark_draft_created(page_id)
             drafts_created += 1
         elif amount < 1000:
             if was_emailed_recently(email_sent_at):
                 print(f"  Skipping — emailed within last 60 days")
                 continue
-            create_draft(svitlana_service, SVITLANA_EMAIL, donor_email, donor_name, SVITLANA_SIGNATURE)
+            create_draft(svitlana_service, SVITLANA_EMAIL, donor_email, donor_name, SVITLANA_SIGNATURE, designation)
             mark_draft_created(page_id)
             drafts_created += 1
         else:
-            # $1000+
+            # $1000+ — publisher donations always go out from Svitlana, with her signature.
+            if is_publishers_donation:
+                create_draft(svitlana_service, SVITLANA_EMAIL, donor_email, donor_name, SVITLANA_SIGNATURE, designation)
+                mark_draft_created(page_id)
+                drafts_created += 1
+                continue
             if not TYMOFIY_EMAIL or not tymofiy_service:
                 print(f"  Skipping — Tymofiy email not configured yet")
                 continue
-            create_draft(tymofiy_service, TYMOFIY_EMAIL, donor_email, donor_name, TYMOFIY_SIGNATURE)
+            create_draft(tymofiy_service, TYMOFIY_EMAIL, donor_email, donor_name, TYMOFIY_SIGNATURE, designation)
             mark_draft_created(page_id)
             drafts_created += 1
     # --- NOTIFY SVITLANA AFTER ALL EMAILS ARE DONE ---
