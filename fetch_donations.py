@@ -216,11 +216,19 @@ def get_donor_status(access_token, contact_id):
     return data[0].get("Donor_status") or ""
 
 
+def is_wire_transfer(donation):
+    """True when the Zoho 'Platform' field marks the donation as a wire transfer."""
+    platform = donation.get("Platform")
+    if isinstance(platform, dict):
+        platform = platform.get("name") or platform.get("value")
+    return "wire transfer" in str(platform or "").lower()
+
+
 def get_donations_in_window(access_token, start, end):
     """Page through Zoho Donations newest-first and keep those inside the window."""
     headers = {"Authorization": f"Zoho-oauthtoken {access_token}"}
     fields = ("Contact_of_the_donor,Email,Donation_amount_in_USD,"
-              "Date_of_donation,Designations,SOURCE")
+              "Date_of_donation,Designations,SOURCE,Platform")
     created_cutoff = start - timedelta(days=ZOHO_CREATED_GRACE_DAYS)
 
     collected = []
@@ -578,10 +586,18 @@ def main():
 
     written = 0
     skipped = 0
+    excluded_wire = 0
     logged_keys = 0
 
     for donation in donations:
         zoho_id = donation.get("id") or ""
+
+        if is_wire_transfer(donation):
+            print(f"Skipping wire transfer donation (Zoho id {zoho_id}): "
+                  f"Platform = {donation.get('Platform')!r}")
+            excluded_wire += 1
+            continue
+
         amount = float(donation.get("Donation_amount_in_USD") or 0)
         donor_email = donation.get("Email") or ""
         date = donation.get("Date_of_donation") or ""
@@ -640,7 +656,8 @@ def main():
         written += 1
 
     verb = "would write" if DRY_RUN else "written"
-    print(f"Done. {verb.capitalize()}: {written}, skipped as duplicates: {skipped}")
+    print(f"Done. {verb.capitalize()}: {written}, skipped as duplicates: {skipped}, "
+          f"excluded wire transfers: {excluded_wire}")
 
 
 if __name__ == "__main__":
