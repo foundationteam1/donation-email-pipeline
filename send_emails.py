@@ -128,14 +128,12 @@ def create_draft(service, sender_email, recipient_email, donor_name, signature, 
         subject = "Thank you for your donation to KSE Foundation"
         html_body = f"""<html>
 <body>
-  <p>Dear {first_name},</p>
-  <p>Thank you for your support of KSE.</p>
-  <p>KSE is now #1 in Ukraine by the average admission score of enrolled bachelor students.</p>
-  <p>KSE educates 0.2% of Ukraine’s university students, and this year 12.2% of the country’s STEM olympiad winners chose KSE.</p>
-  <p>For us it means that KSE is attracting some of the best young talent in the country.</p>
-  <p>This is possible because of partners like you. Your support allows us to give talented students both the opportunity and the confidence to build their future in Ukraine.</p>
-  <p>Our students can study, and KSE can continue operating fully, only because Ukraine’s defenders make it possible. We remain fully committed to supporting them.</p>
-  <p>Thank you for being with KSE.</p>
+  <p>Thank you, {first_name}!</p>
+  <p>We have received your donation.</p>
+  <p>Kyiv is facing increasingly intense attacks. <strong>Since June, Russian attacks on the city have increased 15-fold.</strong> Drones are now targeting buildings, bridges, cars, and people in the streets.</p>
+  <p>And yet, our classrooms remain open and our students keep learning.</p>
+  <p>Ukraine’s defenders make this possible every day. And people like you help KSE continue its work through these difficult months.</p>
+  <p>Thank you for standing with us.</p>
   {signature}
 </body>
 </html>"""
