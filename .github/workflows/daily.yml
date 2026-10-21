@@ -88,6 +88,7 @@ jobs:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
           SVITLANA_TELEGRAM_USER_ID: ${{ secrets.SVITLANA_TELEGRAM_USER_ID }}
+          ONBOARDING_SURVEY_URL: ${{ secrets.ONBOARDING_SURVEY_URL }}
         run: python send_emails.py
  
 

@@ -2,6 +2,7 @@
 import os
 import sys
 import base64
+import html
 from datetime import datetime, timedelta, timezone
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
@@ -55,6 +56,17 @@ GMAIL_TYMOFIY_REFRESH_TOKEN = os.environ["GMAIL_TYMOFIY_REFRESH_TOKEN"]
 TELEGRAM_BOT_TOKEN = os.environ["TELEGRAM_BOT_TOKEN"]
 TELEGRAM_CHAT_ID = os.environ["TELEGRAM_CHAT_ID"]
 SVITLANA_TELEGRAM_USER_ID = os.environ["SVITLANA_TELEGRAM_USER_ID"]
+# --- ONBOARDING ---
+# New donors get the onboarding letter (templates/onboarding_email.html)
+# instead of the usual thank-you. Each one gets a row in the Notion
+# "Onboarding" database; its page ID goes into the survey links, and the
+# Apps Script survey page writes the donor's answers back into that row.
+ONBOARDING_DATABASE_ID = "ea303c6c00c347fba6792e56bfb32897"
+ONBOARDING_TEMPLATE = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                                   "templates", "onboarding_email.html")
+# The Apps Script web-app address ending in /exec. Until it is set, new
+# donors get the usual thank-you letter.
+ONBOARDING_SURVEY_URL = os.environ.get("ONBOARDING_SURVEY_URL", "").strip()
 NOTION_HEADERS = {
     "Authorization": f"Bearer {NOTION_TOKEN}",
     "Content-Type": "application/json",
@@ -148,6 +160,66 @@ def create_draft(service, sender_email, recipient_email, donor_name, signature, 
         body={"message": {"raw": encoded}}
     ).execute()
     print(f"Draft created for {recipient_email} (from {sender_email})")
+def already_onboarded(donor_email):
+    """True if this email already has a row in the Onboarding database."""
+    response = requests.post(
+        f"https://api.notion.com/v1/databases/{ONBOARDING_DATABASE_ID}/query",
+        headers=NOTION_HEADERS,
+        json={"filter": {"property": "Donor Email", "email": {"equals": donor_email}}}
+    )
+    response.raise_for_status()
+    return bool(response.json().get("results"))
+
+
+def create_onboarding_row(donor_name, donor_email, donation_page_id):
+    payload = {
+        "parent": {"database_id": ONBOARDING_DATABASE_ID},
+        "properties": {
+            "Donor Name": {"title": [{"text": {"content": donor_name}}]},
+            "Donor Email": {"email": donor_email},
+            "Donation": {"relation": [{"id": donation_page_id}]},
+            "Sent At": {"date": {"start": datetime.now(timezone.utc).isoformat()}}
+        }
+    }
+    response = requests.post("https://api.notion.com/v1/pages", headers=NOTION_HEADERS, json=payload)
+    response.raise_for_status()
+    return response.json()["id"]
+
+
+def delete_onboarding_row(row_id):
+    requests.patch(f"https://api.notion.com/v1/pages/{row_id}",
+                   headers=NOTION_HEADERS, json={"archived": True})
+
+
+def create_onboarding_draft(service, sender_email, recipient_email, donor_name, donation_page_id):
+    """Create the onboarding letter as a draft and record it in Onboarding.
+
+    The Onboarding row is created first, because its ID goes into the survey
+    links. If the draft then fails, the row is removed again, so the donor
+    is picked up on the next run instead of being marked as onboarded."""
+    row_id = create_onboarding_row(donor_name, recipient_email, donation_page_id)
+    try:
+        with open(ONBOARDING_TEMPLATE, encoding="utf-8") as f:
+            html_body = f.read()
+        html_body = (html_body
+                     .replace("{first_name}", html.escape(get_first_name(donor_name)))
+                     .replace("{survey_url}", f"{ONBOARDING_SURVEY_URL}?id={row_id.replace('-', '')}"))
+        message = MIMEMultipart("alternative")
+        message["to"] = recipient_email
+        message["from"] = sender_email
+        message["subject"] = "Welcome to KSE"
+        message.attach(MIMEText(html_body, "html", "utf-8"))
+        encoded = base64.urlsafe_b64encode(message.as_bytes()).decode()
+        service.users().drafts().create(
+            userId="me",
+            body={"message": {"raw": encoded}}
+        ).execute()
+    except Exception:
+        delete_onboarding_row(row_id)
+        raise
+    print(f"Onboarding draft created for {recipient_email} (from {sender_email})")
+
+
 def mark_draft_created(page_id):
     payload = {
         "properties": {
@@ -198,6 +270,18 @@ def main():
         tymofiy_service = get_gmail_service(
             GMAIL_TYMOFIY_CLIENT_ID, GMAIL_TYMOFIY_CLIENT_SECRET, GMAIL_TYMOFIY_REFRESH_TOKEN
         )
+    def send_svitlana_letter(page_id, donor_email, donor_name, donor_status, designation):
+        """New donors get the onboarding letter once; everyone else, and
+        publisher donations, get the usual thank-you."""
+        if (donor_status == "New" and ONBOARDING_SURVEY_URL
+                and designation.strip() != PUBLISHERS_DESIGNATION
+                and not already_onboarded(donor_email)):
+            create_onboarding_draft(svitlana_service, SVITLANA_EMAIL, donor_email, donor_name, page_id)
+        else:
+            create_draft(svitlana_service, SVITLANA_EMAIL, donor_email, donor_name, SVITLANA_SIGNATURE, designation)
+
+    if not ONBOARDING_SURVEY_URL:
+        print("ONBOARDING_SURVEY_URL is not set — new donors get the usual thank-you letter.")
     drafts_created = 0
     for row in rows:
         props = row["properties"]
@@ -220,14 +304,14 @@ def main():
             if donor_status != "New":
                 print(f"  Skipping — under $100 but donor status is '{donor_status}', not New")
                 continue
-            create_draft(svitlana_service, SVITLANA_EMAIL, donor_email, donor_name, SVITLANA_SIGNATURE, designation)
+            send_svitlana_letter(page_id, donor_email, donor_name, donor_status, designation)
             mark_draft_created(page_id)
             drafts_created += 1
         elif amount < 1000:
             if was_emailed_recently(email_sent_at):
                 print(f"  Skipping — emailed within last 60 days")
                 continue
-            create_draft(svitlana_service, SVITLANA_EMAIL, donor_email, donor_name, SVITLANA_SIGNATURE, designation)
+            send_svitlana_letter(page_id, donor_email, donor_name, donor_status, designation)
             mark_draft_created(page_id)
             drafts_created += 1
         else:

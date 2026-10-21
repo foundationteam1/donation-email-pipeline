@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Welcome to KSE</title>
+</head>
+<!--
+  Onboarding email. Placeholders filled by the sender script:
+    {first_name}  - donor's first name
+    {survey_url}  - Apps Script web-app URL with the donor's token, e.g. https://script.google.com/.../exec?id=k7f2q9
+  Email clients strip <style> and forms, so everything is inline and the survey is links.
+-->
+<body style="margin:0;padding:0;background:#f2f4f7;">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f2f4f7;">
+<tr><td align="center" style="padding:24px 12px;">
+<table role="presentation" width="600" cellpadding="0" cellspacing="0" style="max-width:600px;width:100%;background:#ffffff;border-radius:8px;font-family:Arial,Helvetica,sans-serif;font-size:15px;line-height:1.55;color:#17202b;">
+<tr><td style="padding:32px 32px 8px;">
+
+<p style="margin:0 0 16px;">Dear {first_name},</p>
+<p style="margin:0 0 16px;">Thank you for supporting KSE.</p>
+<p style="margin:0 0 16px;">We want our partners to know KSE better — who we are, what we do, and what drives our work.</p>
+<p style="margin:0 0 16px;">We also want to understand what is most useful and interesting to you, and how you would prefer to hear from us. There is a short survey at the end of this email.</p>
+
+<p style="margin:0 0 16px;"><strong>You may know us through one program or one donation. But KSE is much bigger than any single project.</strong></p>
+<p style="margin:0 0 16px;">KSE brings together a university, a foundation, a research institute, a business school, and vocational training through KSE ProfTech. Together, these institutions build the capacity Ukraine needs through education, research, strong institutions, practical skills, and direct support.</p>
+<p style="margin:0 0 16px;">KSE takes 0.3% of everyone who enters university in Ukraine — and 19% of the STEM olympiad winners who stay in the country. This year’s new students came in with the highest entrance scores in Ukraine, and half of them chose STEM. They join over 2,000 students, the largest community in KSE’s 30 years.</p>
+<p style="margin:0 0 16px;"><strong>KSE Foundation</strong> is one of Ukraine’s five largest charitable foundations, according to Forbes Ukraine. It strengthens Ukraine by investing in advanced education, science and talent, supporting KSE’s institutional development and expanding access to transformative learning. This academic year, donors fund scholarships for 879 KSE students. The Foundation also leads nationwide educational, humanitarian and defence initiatives, from school shelters and talent grants to evacuation support and critical equipment for Ukraine’s defenders.</p>
+<p style="margin:0 0 16px;"><strong>KSE Institute</strong> is one of the largest think tanks in Ukraine. Its research supports decisions on Ukraine’s economy, recovery, investment, and sanctions. The Institute tracks russian oil revenues, the shadow fleet, and sanctions evasion, and works with government and international partners on Ukraine’s recovery.</p>
+<p style="margin:0 0 16px;"><strong>KSE ProfTech</strong> prepares people for the jobs Ukraine needs now through short vocational programs designed together with employers. <strong>83% of graduates are employed after training.</strong></p>
+<p style="margin:0 0 16px;"><strong>KSE Business School</strong> is led by former Prime Minister <strong>Yulia Svyrydenko</strong> and develops leaders for business, public institutions, and the defence sector. Its programs also work directly with Ukraine’s defence industry.</p>
+<p style="margin:0 0 24px;"><a href="https://foundation.kse.ua/en/what-we-do/" style="color:#1f4fd1;">Reasons to trust us</a></p>
+
+<p style="margin:0 0 12px;"><strong>You can see more in our latest Mid-Year Report.</strong></p>
+<table role="presentation" cellpadding="0" cellspacing="0" style="margin:0 0 28px;"><tr>
+<td style="background:#1f4fd1;border-radius:6px;"><a href="https://foundation.kse.ua/wp-content/uploads/2026/09/KSE_Mid-Year_Report_2026.pdf" style="display:inline-block;padding:12px 22px;color:#ffffff;text-decoration:none;font-weight:bold;">Read the latest KSE report →</a></td>
+</tr></table>
+
+</td></tr>
+
+<!-- Survey -->
+<tr><td style="padding:0 32px 8px;">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#eef2fb;border-radius:8px;">
+<tr><td style="padding:22px 22px 6px;">
+<p style="margin:0 0 6px;">We would also like to make sure that what you receive from KSE is useful to you.</p>
+<p style="margin:0 0 2px;font-size:17px;"><strong>What would you like to receive?</strong></p>
+<p style="margin:0 0 12px;color:#5d6b7a;font-style:italic;">Choose as many as you like.</p>
+</td></tr>
+<tr><td style="padding:0 22px;">
+<a href="{survey_url}&amp;choice=news" style="display:block;margin:0 0 8px;padding:11px 14px;background:#ffffff;border:1px solid #1f4fd1;border-radius:6px;color:#1f4fd1;text-decoration:none;">☐&nbsp; KSE news and updates</a>
+<a href="{survey_url}&amp;choice=reports" style="display:block;margin:0 0 8px;padding:11px 14px;background:#ffffff;border:1px solid #1f4fd1;border-radius:6px;color:#1f4fd1;text-decoration:none;">☐&nbsp; Impact and annual reports</a>
+<a href="{survey_url}&amp;choice=events" style="display:block;margin:0 0 8px;padding:11px 14px;background:#ffffff;border:1px solid #1f4fd1;border-radius:6px;color:#1f4fd1;text-decoration:none;">☐&nbsp; Events and invitations</a>
+<a href="{survey_url}&amp;choice=support" style="display:block;margin:0 0 8px;padding:11px 14px;background:#ffffff;border:1px solid #1f4fd1;border-radius:6px;color:#1f4fd1;text-decoration:none;">☐&nbsp; Opportunities to support</a>
+</td></tr>
+<tr><td style="padding:14px 22px 22px;">
+<p style="margin:0 0 10px;font-size:17px;"><strong>Preferred language</strong></p>
+<table role="presentation" cellpadding="0" cellspacing="0"><tr>
+<td style="padding-right:8px;"><a href="{survey_url}&amp;lang=uk" style="display:inline-block;padding:10px 18px;background:#ffffff;border:1px solid #1f4fd1;border-radius:6px;color:#1f4fd1;text-decoration:none;">Українська</a></td>
+<td><a href="{survey_url}&amp;lang=en" style="display:inline-block;padding:10px 18px;background:#ffffff;border:1px solid #1f4fd1;border-radius:6px;color:#1f4fd1;text-decoration:none;">English</a></td>
+</tr></table>
+</td></tr>
+</table>
+</td></tr>
+
+<tr><td style="padding:24px 32px 32px;">
+<p style="margin:0 0 16px;">Thank you for being with KSE.</p>
+<p style="margin:0;"><strong>KSE Foundation</strong></p>
+</td></tr>
+</table>
+</td></tr>
+</table>
+</body>
+</html>

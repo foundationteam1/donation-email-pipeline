@@ -42,6 +42,10 @@ NOTION_HEADERS = {
 # =====================================================================
 NOTION_DATA_SOURCE_ID = "b9069e0c-af07-47c6-ac1f-ba84341f8b75"
 SOURCE_VIEW_ID = "aa56d27fdd65437fada60d872b494223"
+# ONBOARDING_DATA_SOURCE_ID: the "Onboarding" database (onboarding emails and
+# survey answers). Each new donation page also gets a view of it, filtered
+# to the donor's email, so the donor's answers show on their card.
+ONBOARDING_DATA_SOURCE_ID = "86adcf30-097d-4e9b-9b2d-e49b75ef79d3"
 
 # =====================================================================
 # COLLECTION WINDOW
@@ -462,6 +466,31 @@ def create_donor_view(page_id, donor_name, donor_email, reference_config, refere
     print(f"Created donor view for {donor_name} ({donor_email})")
 
 
+def create_onboarding_view(page_id, donor_name, donor_email):
+    """Add the donor's row from the Onboarding database to this page, below
+    the donation-history table. Empty until the onboarding email is sent;
+    the filter is live, so survey answers appear without touching the page."""
+    payload = {
+        "create_database": {"parent": {"type": "page_id", "page_id": page_id}},
+        "data_source_id": ONBOARDING_DATA_SOURCE_ID,
+        "name": "Onboarding",
+        "type": "table",
+        "filter": {"property": "Donor Email", "email": {"equals": donor_email}},
+    }
+
+    if DRY_RUN:
+        print(f"DRY RUN — would create onboarding view for {donor_name} ({donor_email})")
+        return
+
+    response = requests.post("https://api.notion.com/v1/views", headers=NOTION_HEADERS, json=payload)
+    if response.status_code not in (200, 201):
+        print(f"WARNING: failed to create onboarding view for {donor_name} "
+              f"({donor_email}): {response.status_code} {response.text}")
+        return
+
+    print(f"Created onboarding view for {donor_name} ({donor_email})")
+
+
 def write_to_notion(zoho_id, donor_name, donor_email, amount, date,
                     donor_status, designation, utm,
                     reference_config, reference_sorts):
@@ -540,6 +569,7 @@ def write_to_notion(zoho_id, donor_name, donor_email, amount, date,
     # Give this new page its own filtered donor-history table.
     if donor_email:
         create_donor_view(page_id, donor_name, donor_email, reference_config, reference_sorts)
+        create_onboarding_view(page_id, donor_name, donor_email)
 
     return page_id
 
